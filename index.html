@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Суккубить</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#05080b">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="think<-s->inlinks — альбом «Суккубить»: куб из шести граней, у каждой свой трек.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,6 +31,16 @@
 
   header { pointer-events: none; }
   .nick { position: fixed; font-family: 'Rubik Glitch', monospace; font-size: 15px; letter-spacing: 1px; white-space: nowrap; z-index: 2; }
+  #nick-s { display: inline-block; pointer-events: auto; cursor: grab; touch-action: none; padding: 0 3px;
+    transition: transform .25s cubic-bezier(.3,1.6,.5,1); }
+  #nick-s.drag { transition: none; cursor: grabbing; }
+  #quality { position: fixed; z-index: 4; top: calc(40px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right));
+    font: 500 11px/1 'JetBrains Mono', monospace; color: var(--cyan); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 5px 8px; cursor: pointer; letter-spacing: .5px; }
+  #dl { position: absolute; right: 10px; top: 8px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+    background: none; color: var(--cyan); cursor: pointer; display: grid; place-items: center; padding: 0; font: 15px/1 sans-serif; }
+  #dl.done { color: #9ff8a0; border-color: rgba(159,248,160,.4); }
+  .player { position: relative; }
   .nick.tr { top: calc(14px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); }
   .nick .a { color: var(--cyan); text-shadow: 0 0 8px var(--cyan); }
   .nick .s { font-size: 18px; color: #fff; }
@@ -53,7 +68,7 @@
   .play:active { transform: scale(0.94); }
   .play:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   .play svg { width: 22px; height: 22px; fill: currentColor; }
-  .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+  .meta { padding-right: 30px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
   .title { font-size: 24px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .num { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--cyan); margin-right: 10px; vertical-align: 3px; }
   .time { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); flex-shrink: 0; }
@@ -78,7 +93,8 @@
 <div id="scene"></div>
 <canvas id="fx"></canvas>
 <header>
-  <div class="nick tr">think<span class="a">&lt;-</span><span class="s">s</span><span class="a">-&gt;</span>inlinks</div>
+  <div class="nick tr">think<span class="a">&lt;-</span><span class="s" id="nick-s" title="">s</span><span class="a">-&gt;</span>inlinks</div>
+  <button id="quality" aria-label="Качество видео">720p</button>
   <canvas class="logo" id="logo" aria-label="Суккубить"></canvas>
 </header>
 <button id="delta" aria-label="∆ Квант">∆</button>
@@ -91,6 +107,7 @@
     <button class="play" id="play" aria-label="Играть" disabled>
       <svg id="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
     </button>
+    <button id="dl" aria-label="Скачать альбом на устройство" title="Скачать альбом на устройство">⤓</button>
     <div class="meta"><div class="title" id="title">Суккубить</div><div class="time" id="time"></div></div>
     <div class="bar" id="bar"><div class="fill" id="fill"></div><div class="hint" id="hint"></div></div>
   </div>
@@ -149,6 +166,10 @@ const session = ENCRYPTED ? Promise.resolve() : (tg && tg.initData)
     ? fetch('api/invite?k=' + encodeURIComponent(inviteKey), { credentials: 'same-origin' }).catch(() => {})
     : Promise.resolve();
 
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} },
+};
 let apiBase = null;
 async function api() {
   if (apiBase) return apiBase;
@@ -160,18 +181,45 @@ async function api() {
 let keyP = null;
 function mediaKey() {
   return keyP || (keyP = (async () => {
+    try {
+      const saved = JSON.parse(store.get('sk-key') || 'null');
+      if (saved && saved.exp * 1000 > Date.now()) return importKey(saved.key);
+    } catch (e) {}
     const body = tg && tg.initData ? { initData: tg.initData } : { k: inviteKey || '' };
     const r = await fetch((await api()) + '/api/key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!r.ok) throw new Error('no access');
-    const raw = Uint8Array.from(atob((await r.json()).key), c => c.charCodeAt(0));
-    return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+    const j = await r.json();
+    store.set('sk-key', JSON.stringify({ key: j.key, exp: j.exp }));
+    return importKey(j.key);
   })().catch(e => { keyP = null; throw e; }));
+}
+function importKey(b64) {
+  const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+}
+// encrypted tracks are kept in the device's Cache Storage: downloaded once, then played offline
+const MEDIA_CACHE = 'sk-media-v1';
+async function cachedBin(url) {
+  try {
+    const c = await caches.open(MEDIA_CACHE);
+    const hit = await c.match(url);
+    if (hit) return hit.arrayBuffer();
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    await c.put(url, r.clone());
+    return r.arrayBuffer();
+  } catch (e) {
+    return fetch(url).then(r => r.arrayBuffer());       // no Cache Storage (old webview): plain download
+  }
+}
+async function isCached(url) {
+  try { return !!(await (await caches.open(MEDIA_CACHE)).match(url)); } catch (e) { return false; }
 }
 const blobs = new Map();
 function trackSrc(tr) {
   if (!ENCRYPTED) return Promise.resolve(tr.audio);
   if (!blobs.has(tr)) blobs.set(tr, (async () => {
-    const [key, buf] = await Promise.all([mediaKey(), fetch(tr.audio).then(r => r.arrayBuffer())]);
+    const [key, buf] = await Promise.all([mediaKey(), cachedBin(tr.audio)]);
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
     return URL.createObjectURL(new Blob([plain], { type: tr.audio.includes('.m4a') ? 'audio/mp4' : 'audio/mpeg' }));
   })().catch(e => { blobs.delete(tr); throw e; }));
@@ -195,7 +243,13 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'hi
 // covers load only when their face is opened, and the track always goes first
 const LITE = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
   || (tg && /^(android|ios)/.test(tg.platform || '')) || Math.min(screen.width, screen.height) < 600 || new URLSearchParams(location.search).has('lite');
-let PR = LITE ? 1 : Math.min(window.devicePixelRatio, 1.5);    // retina at 1.5x is plenty for a glowing cube
+// quality: the viewer's choice (the button under the nick), remembered on the device
+const QUALITIES = ['low', 'mid', 'high'], QLABEL = { low: '360p', mid: '720p', high: '1080p' };
+const QDIR = { low: 'assets/m/', mid: 'assets/', high: 'assets/hd/' };
+const qChosen = store.get('sk-quality');
+let QUALITY = QUALITIES.includes(qChosen) ? qChosen : (LITE ? 'low' : 'mid');
+const qPR = () => QUALITY === 'low' ? 1 : QUALITY === 'mid' ? Math.min(window.devicePixelRatio, 1.5) : Math.min(window.devicePixelRatio, 2);
+let PR = qPR();
 renderer.setPixelRatio(PR);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.appendChild(renderer.domElement);
@@ -425,7 +479,7 @@ const videos = [];
 function videoTexture(src) {
   const v = document.createElement('video');
   Object.assign(v, { muted: true, loop: true, playsInline: true, crossOrigin: 'use-credentials', preload: 'auto' });
-  v.dataset.src = LITE ? src.replace('assets/', 'assets/m/') : src;   // light 360p versions for phones
+  v.dataset.name = src.split('/').pop();                // the file; its folder depends on the quality
   if (LITE) v.preload = 'none';
   session.then(() => { v.dataset.ready = '1'; if (unlocked) syncVideos(true); });   // the src only after the session cookie
   v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
@@ -494,6 +548,14 @@ const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
 // globe model: yaw turns the ring of four faces (contents, tracks around it), pitch tilts to the top/bottom face.
 // left turns the cube left, up turns it up; up then down always comes back to the same face
 let yaw = 0, pitch = 0;
+let FREE = store.get('sk-mode') === 'кубик';           // the easter egg in the nick switches it
+let seeking = false;                                   // free mode: flying to a chosen face
+const vel = new THREE.Vector2();
+let last = null;
+function spinFree(dx, dy) {
+  cube.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(Y, dx * 0.009))
+    .premultiply(new THREE.Quaternion().setFromAxisAngle(X, dy * 0.009)).normalize();
+}
 const FACE_YP = { 4: [0, null], 0: [-1, null], 5: [2, null], 1: [1, null], 2: [null, 1], 3: [null, -1] };   // face -> [yaw, pitch]
 function applyTurn() {
   target.copy(new THREE.Quaternion().setFromAxisAngle(X, pitch * Math.PI / 2)
@@ -502,6 +564,7 @@ function applyTurn() {
   faceTex[2].center.set(0.5, 0.5); faceTex[2].rotation = -yaw * Math.PI / 2;
   faceTex[3].center.set(0.5, 0.5); faceTex[3].rotation = yaw * Math.PI / 2;
   showFace(faceTowardsCamera(target));          // the player switches right away, not after the cube settles
+  seeking = true; vel.set(0, 0);
 }
 // magnet pull: the cube flies towards the magnet of the turn direction and springs back
 const PULL = { left: [-1, 0], right: [1, 0], up: [0, 1], down: [0, -1] };
@@ -533,10 +596,17 @@ function turn(dir) {
 }
 el.addEventListener('pointerdown', e => {
   dragging = true; start = { x: e.clientX, y: e.clientY, t: performance.now() }; base = cube.quaternion.clone();
+  last = { x: e.clientX, y: e.clientY }; vel.set(0, 0); if (FREE) seeking = false;
   el.setPointerCapture(e.pointerId); unlockMedia();
 });
 el.addEventListener('pointermove', e => {
   if (!dragging) return;
+  if (FREE) {                                    // «кубик»: the cube follows the finger in any direction
+    const dx = e.clientX - last.x, dy = e.clientY - last.y;
+    last = { x: e.clientX, y: e.clientY };
+    spinFree(dx, dy); vel.set(dx, dy);
+    return;
+  }
   // the cube leans after the finger (up to ~30 degrees) so the gesture feels physical
   const dx = e.clientX - start.x, dy = e.clientY - start.y;
   const horiz = Math.abs(dx) > Math.abs(dy);
@@ -548,6 +618,7 @@ el.addEventListener('pointerup', e => {
   dragging = false;
   const dx = e.clientX - start.x, dy = e.clientY - start.y, dist = Math.hypot(dx, dy);
   const fast = dist > 18 && performance.now() - start.t < 250;
+  if (FREE) { if (dist < 8) tap(e); return; }    // free mode: the cube keeps its spin (inertia)
   if (dist > 45 || fast) {
     if (Math.abs(dx) > Math.abs(dy)) turn(dx < 0 ? 'left' : 'right'); else turn(dy < 0 ? 'up' : 'down');
   } else if (dist < 8) tap(e);
@@ -613,7 +684,7 @@ function syncVideos(force) {
     if (want && !v.src && v.dataset.ready && (!LITE || f === target_)) {   // phones: only the face being opened
       // lazy: the video is fetched the first time its face is wanted; on a phone not while a track is still buffering
       if (LITE && !audio.paused && audio.readyState < 3) continue;
-      v.src = v.dataset.src;
+      v.src = QDIR[QUALITY] + v.dataset.name;
     }
     if (want && v.src && v.paused) v.play().catch(() => {});
     else if (!want && !v.paused) v.pause();
@@ -802,8 +873,9 @@ function drawHeaderLogo(t) {
 }
 
 const clock = new THREE.Clock();
-let useBloom = !LITE, slowFor = 0, avgDt = 1 / 60;
+let useBloom = QUALITY === 'high' || (QUALITY === 'mid' && !LITE), slowFor = 0, avgDt = 1 / 60;
 function adapt(dt) {
+  if (qChosen) return;                                 // the viewer picked a quality: respect it
   avgDt = avgDt * 0.95 + dt * 0.05;
   slowFor = avgDt > 1 / 40 ? slowFor + dt : 0;
   if (slowFor > 2) {                                   // two seconds under ~40 fps: step the quality down
@@ -816,10 +888,14 @@ function adapt(dt) {
 let collapse = 0, settledFace = -1;
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
-  if (!dragging) cube.quaternion.slerp(target, 1 - Math.pow(0.002, dt));
+  if (FREE && !dragging && !seeking) {               // «кубик»: inertia, slowly fading
+    spinFree(vel.x, vel.y); vel.multiplyScalar(Math.pow(0.12, dt));
+    target.copy(cube.quaternion);
+  } else if (!dragging) cube.quaternion.slerp(target, 1 - Math.pow(0.002, dt));
+  if (seeking && cube.quaternion.angleTo(target) < 0.01) seeking = false;
   // uncertainty: high while the cube is moving, collapses to 0 when it settles on a face
   const off = cube.quaternion.angleTo(target);
-  const moving = dragging || off > 0.02;
+  const moving = dragging || off > 0.02 || (FREE && vel.lengthSq() > 0.05);
   uncertainty += ((moving ? 1 : 0) - uncertainty) * (moving ? 0.08 : 0.12);
   const f = nearestFace();
   if (!moving && off < 0.02 && settledFace !== f) { settledFace = f; collapse = 1; showFace(f); }
@@ -840,7 +916,7 @@ function frame() {
     g.position.set(cube.position.x + 0.55 * s * u, cube.position.y - 0.15 * s * u, -0.2 * u);
     g.material.forEach(m => { m.opacity = 0.16 * u; });
     g.userData.edge.material.opacity = 0.5 * u;
-    g.visible = !LITE && u > 0.02;            // phones: no ghost copies (two extra cube renders)
+    g.visible = QUALITY !== 'low' && u > 0.02;            // phones: no ghost copies (two extra cube renders)
   });
   edgeMat.opacity = 0.75 + 0.25 * Math.sin(t * 2.3) + collapse;
   bloom.strength = 0.3 + collapse * 0.8;
@@ -863,6 +939,80 @@ function frame() {
 // draw canvases once the web fonts are ready (redraw the contents face after that)
 Promise.all(['48px "Rubik Glitch"', '62px "Cormorant Garamond"', '500 40px "JetBrains Mono"']
   .map(f => document.fonts.load(f)));
+// ---------------- quality button
+const qBtn = document.getElementById('quality');
+function setQuality(q) {
+  QUALITY = q; qBtn.textContent = QLABEL[q];
+  PR = qPR(); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); resize();
+  useBloom = q === 'high' || (q === 'mid' && !LITE);
+  for (const v of videos) if (v.src) { const was = !v.paused; v.src = QDIR[q] + v.dataset.name; if (was) v.play().catch(() => {}); }
+}
+qBtn.textContent = QLABEL[QUALITY];
+qBtn.onclick = () => {
+  const q = QUALITIES[(QUALITIES.indexOf(QUALITY) + 1) % QUALITIES.length];
+  store.set('sk-quality', q); setQuality(q);
+  hintFor(`видео ${QLABEL[q]}`);
+};
+function hintFor(text) {
+  $('hint').textContent = text;
+  clearTimeout(hintFor.t); hintFor.t = setTimeout(() => showFace(current), 1800);
+}
+
+// ---------------- the easter egg: drag the «s» of the nick: left — «кубит», right — «кубик»
+const sEl = document.getElementById('nick-s');
+const S_SHIFT = 6;
+function placeS() { sEl.style.transform = `translateX(${FREE ? S_SHIFT : -S_SHIFT}px)`; }
+function setMode(free) {
+  if (free === FREE) return placeS();
+  FREE = free; store.set('sk-mode', free ? 'кубик' : 'кубит'); placeS();
+  if (free) { vel.set(14, -9); seeking = false; }          // a push, so the new freedom is felt at once
+  else goTo(nearestFace());                                 // back to quarter turns: snap to the nearest face
+  if (tg && tg.HapticFeedback) try { tg.HapticFeedback.impactOccurred('medium'); } catch (e) {}
+  hintFor(free ? 'режим: кубик' : 'режим: кубит');
+}
+placeS();
+let sDrag = null;
+sEl.addEventListener('pointerdown', e => { sDrag = { x: e.clientX }; sEl.classList.add('drag'); sEl.setPointerCapture(e.pointerId); e.stopPropagation(); });
+sEl.addEventListener('pointermove', e => {
+  if (!sDrag) return;
+  const dx = Math.max(-14, Math.min(14, e.clientX - sDrag.x + (FREE ? S_SHIFT : -S_SHIFT)));
+  sEl.style.transform = `translateX(${dx}px)`;
+});
+sEl.addEventListener('pointerup', e => {
+  if (!sDrag) return;
+  const dx = e.clientX - sDrag.x; sDrag = null; sEl.classList.remove('drag');
+  if (dx < -4) setMode(false); else if (dx > 4) setMode(true); else placeS();
+});
+sEl.addEventListener('pointercancel', () => { sDrag = null; sEl.classList.remove('drag'); placeS(); });
+
+// ---------------- download the album to the device (encrypted, for offline listening)
+const dlBtn = document.getElementById('dl');
+const withAudio = TRACKS.filter(t => t.audio);
+async function refreshDl() {
+  if (!ENCRYPTED) { dlBtn.style.display = 'none'; return; }
+  const n = (await Promise.all(withAudio.map(t => isCached(t.audio)))).filter(Boolean).length;
+  dlBtn.classList.toggle('done', n === withAudio.length);
+  dlBtn.title = n === withAudio.length ? 'Альбом сохранён на устройстве' : 'Скачать альбом на устройство';
+}
+dlBtn.onclick = async () => {
+  unlockMedia();
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
+  let done = 0;
+  try {
+    await mediaKey();
+    for (const tr of withAudio) {
+      hintFor(`скачивание ${done + 1}/${withAudio.length}…`); clearTimeout(hintFor.t);
+      await cachedBin(tr.audio); done++;
+    }
+    hintFor('альбом сохранён на устройстве');
+  } catch (e) { hintFor('не удалось скачать: нет доступа или сети'); }
+  refreshDl();
+};
+refreshDl();
+
+// ---------------- PWA: install as an app, the shell works offline (see sw.js)
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+
 showFace(CONTENTS_FACE);
 requestAnimationFrame(frame);
 </script>
