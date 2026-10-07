@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Суккубить</title>
+<meta name="description" content="think<-s->inlinks — альбом «Суккубить»: куб из шести граней, у каждой свой трек.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Comforter&family=Cormorant+Garamond:wght@400;500&family=JetBrains+Mono:wght@400;500&family=Rubik+Glitch&display=swap" rel="stylesheet">
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root {
+    --bg: #05080b;
+    --cyan: #00e5ff;
+    --ink: #e8fcff;
+    --dim: rgba(232, 252, 255, 0.55);
+    --panel: rgba(6, 14, 18, 0.62);
+    --line: rgba(0, 229, 255, 0.28);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: 'Cormorant Garamond', Georgia, serif; overscroll-behavior: none; }
+  #scene { position: fixed; inset: 0; touch-action: none; }
+  canvas { display: block; }
+
+  header { pointer-events: none; }
+  .nick { position: fixed; font-family: 'Rubik Glitch', monospace; font-size: 15px; letter-spacing: 1px; white-space: nowrap; z-index: 2; }
+  .nick.tr { top: calc(14px + env(safe-area-inset-top)); right: calc(12px + env(safe-area-inset-right)); }
+  .nick .a { color: var(--cyan); text-shadow: 0 0 8px var(--cyan); }
+  .nick .s { font-size: 18px; color: #fff; }
+  .logo { position: fixed; z-index: 4; pointer-events: auto; cursor: pointer; }   /* a tap brings the cube back to the contents */
+  #logo { left: calc(6px + env(safe-area-inset-left)); top: calc(6px + env(safe-area-inset-top)); }
+  /* ∆ in the bottom-right corner: straight to «Квант», the face opposite the contents */
+  #delta { position: fixed; left: 0; top: 0; z-index: 4; width: var(--mag, 60px); height: var(--mag, 60px); margin: calc(var(--mag, 60px) / -2) 0 0 calc(var(--mag, 60px) / -2);
+    border: none; background: none; cursor: pointer; padding: 0 0 6px; display: grid; place-items: center;
+    color: #bff8ff; font: 500 calc(var(--mag, 60px) * 1.05)/1 'JetBrains Mono', monospace; will-change: transform;
+    text-shadow: 0 0 6px #fff, 0 0 14px #00e5ff, 0 0 30px #00e5ff, 0 0 52px rgba(0,229,255,.7);
+    animation: deltaGlow 1.6s ease-in-out infinite; }
+  @keyframes deltaGlow { 50% { text-shadow: 0 0 8px #fff, 0 0 20px #00e5ff, 0 0 44px #00e5ff, 0 0 80px rgba(0,229,255,.9); } }
+  #delta.hit { color: #fff; text-shadow: 0 0 10px #fff, 0 0 26px #00e5ff, 0 0 60px #00e5ff, 0 0 110px rgba(255,80,60,.8); }
+  #fx { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+
+  footer { position: fixed; left: calc(10px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); pointer-events: none;
+    width: min(340px, calc(100vw - 160px)); }   /* the player sits in the bottom-left corner */
+  @media (orientation: portrait) { footer { right: calc(10px + env(safe-area-inset-right)); width: auto; } }   /* phones: full width, so the title fits */
+  .player { pointer-events: auto; width: 100%; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 18px; padding: 12px 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    display: grid; grid-template-columns: 52px 1fr; gap: 4px 12px; align-items: center; }
+  .play { grid-row: span 2; width: 52px; height: 52px; border-radius: 50%; border: 1px solid var(--cyan);
+    background: rgba(0, 229, 255, 0.08); color: var(--cyan); display: grid; place-items: center; cursor: pointer;
+    box-shadow: 0 0 18px rgba(0, 229, 255, 0.25); transition: transform .15s, opacity .2s; }
+  .play:active { transform: scale(0.94); }
+  .play:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
+  .play svg { width: 22px; height: 22px; fill: currentColor; }
+  .meta { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+  .title { font-size: 24px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .num { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--cyan); margin-right: 10px; vertical-align: 3px; }
+  .time { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); flex-shrink: 0; }
+  .bar { position: relative; height: 18px; cursor: pointer; touch-action: none; }
+  .bar::before { content: ''; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(255,255,255,.14); }
+  .fill { position: absolute; left: 0; top: 8px; height: 2px; width: 0; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+  .hint { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); }
+
+  .nav { position: fixed; width: 40px; height: 40px; border-radius: 50%;
+    border: 1px solid var(--line); background: var(--panel); color: var(--cyan); display: grid; place-items: center;
+    cursor: pointer; opacity: .75; }
+  /* magnets (Kling art): Viking helmet ← Rewind, horseshoe → Вы правы, pill ↓ Теневой опцион, snake & phoenix ↑ Новая фаза */
+  .magnet { width: var(--mag, 56px); height: var(--mag, 56px); border: none; background: none; opacity: 1; padding: 0; }
+  .magnet img { width: 100%; height: 100%; display: block; pointer-events: none;
+    filter: drop-shadow(0 0 6px rgba(0,229,255,.25)); transition: filter .25s, transform .25s; }
+  .magnet.pull img { filter: brightness(1.45) drop-shadow(0 0 12px #00e5ff) drop-shadow(0 0 20px rgba(255,70,40,.55)); transform: scale(1.12); }
+  .magnet { transform: translate(-50%, -50%); z-index: 3; }   /* left/top are set by layoutMagnets() */
+  @media (max-width: 420px) { .title { font-size: 21px; } }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+<canvas id="fx"></canvas>
+<header>
+  <div class="nick tr">think<span class="a">&lt;-</span><span class="s">s</span><span class="a">-&gt;</span>inlinks</div>
+  <canvas class="logo" id="logo" aria-label="Суккубить"></canvas>
+</header>
+<button id="delta" aria-label="∆ Квант">∆</button>
+<button class="nav magnet" id="left" aria-label="Магнит слева"><img src="assets/mag-left.png" alt="" draggable="false"></button>
+<button class="nav magnet" id="right" aria-label="Магнит справа"><img src="assets/mag-right.png" alt="" draggable="false"></button>
+<button class="nav magnet" id="up" aria-label="Магнит сверху"><img src="assets/mag-up.png" alt="" draggable="false"></button>
+<button class="nav magnet" id="down" aria-label="Магнит снизу"><img src="assets/mag-down.png" alt="" draggable="false"></button>
+<footer>
+  <div class="player">
+    <button class="play" id="play" aria-label="Играть" disabled>
+      <svg id="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+    </button>
+    <div class="meta"><div class="title" id="title">Суккубить</div><div class="time" id="time"></div></div>
+    <div class="bar" id="bar"><div class="fill" id="fill"></div><div class="hint" id="hint"></div></div>
+  </div>
+</footer>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ------------------------------------------------------------------ album data
+// BoxGeometry face order: +x, -x, +y, -y, +z, -z. The contents face (+z) is opposite Rewind (-z).
+// code: the track's number in the contents; arrow: the swipe/arrow that brings it from the contents.
+// Квант (∆) is opposite the contents: two turns away. The binary codes 00/01/10/11 sit on the four neighbours.
+const TRACKS = [
+  { code: '∆',  arrow: '',  title: 'Квант',          face: 5, video: 'assets/kvant.mp4',          audio: 'assets/kvant.mp3.bin' },
+  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4',         audio: 'assets/rewind.m4a.bin' },
+  { code: '01', arrow: '→', title: 'Вы правы',       face: 1, video: 'assets/vy-pravy.mp4',       audio: 'assets/vy-pravy.mp3.bin' },
+  { code: '10', arrow: '↓', title: 'Теневой опцион', face: 2, video: 'assets/tenevoy-option.mp4', audio: 'assets/tenevoy-option.mp3.bin' },
+  { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4',                        audio: 'assets/novaya-faza.mp3.bin' },
+];
+const CONTENTS_FACE = 4;
+// the orientation that turns each face to the viewer, upright
+const FACE_Q = [
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(0, -Math.PI / 2, 0)),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI / 2, 0)),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2, 0, 0)),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)),
+  new THREE.Quaternion(),
+  new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.PI, 0)),
+];
+
+const tg = window.Telegram && window.Telegram.WebApp;
+if (tg && tg.platform && tg.platform !== 'unknown') {   // only inside Telegram
+  try { tg.ready(); tg.expand(); tg.disableVerticalSwipes && tg.disableVerticalSwipes(); } catch (e) {}
+}
+// Media (mp3/mp4) is served only to a validated Telegram session: the server checks initData and sets a cookie.
+// Outside Telegram (a local browser) there is no initData and the local server lets media through as is.
+// A browser without Telegram comes with an invite link (?k=…, issued by the bot's /link): it is exchanged for the cookie.
+const inviteKey = new URLSearchParams(location.search).get('k');
+// CDN mode (the build for GitHub Pages sets ENCRYPTED = true): videos are public, tracks are AES-GCM encrypted
+// .bin files; the key comes from the home server (the tunnel) for a Telegram user or an invite link.
+const ENCRYPTED = true;
+const session = ENCRYPTED ? Promise.resolve() : (tg && tg.initData)
+  ? fetch('api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ initData: tg.initData }), credentials: 'same-origin' }).catch(() => {})
+  : inviteKey
+    ? fetch('api/invite?k=' + encodeURIComponent(inviteKey), { credentials: 'same-origin' }).catch(() => {})
+    : Promise.resolve();
+
+let apiBase = null;
+async function api() {
+  if (apiBase) return apiBase;
+  const q = new URLSearchParams(location.search).get('api');      // the bot passes the current tunnel address
+  if (q) return (apiBase = q.replace(/\/$/, ''));
+  const r = await fetch('api.json?ts=' + Date.now());              // otherwise: written by start-tunnel.ps1
+  return (apiBase = (await r.json()).api.replace(/\/$/, ''));
+}
+let keyP = null;
+function mediaKey() {
+  return keyP || (keyP = (async () => {
+    const body = tg && tg.initData ? { initData: tg.initData } : { k: inviteKey || '' };
+    const r = await fetch((await api()) + '/api/key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error('no access');
+    const raw = Uint8Array.from(atob((await r.json()).key), c => c.charCodeAt(0));
+    return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+  })().catch(e => { keyP = null; throw e; }));
+}
+const blobs = new Map();
+function trackSrc(tr) {
+  if (!ENCRYPTED) return Promise.resolve(tr.audio);
+  if (!blobs.has(tr)) blobs.set(tr, (async () => {
+    const [key, buf] = await Promise.all([mediaKey(), fetch(tr.audio).then(r => r.arrayBuffer())]);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
+    return URL.createObjectURL(new Blob([plain], { type: tr.audio.includes('.m4a') ? 'audio/mp4' : 'audio/mpeg' }));
+  })().catch(e => { blobs.delete(tr); throw e; }));
+  return blobs.get(tr);
+}
+// a tiny silent clip played inside the tap: it unlocks the audio element, so the real track may start later (iOS)
+const SILENT = (() => {
+  const n = 800, b = new ArrayBuffer(44 + n), v = new DataView(b);
+  const w = (o, t) => [...t].forEach((c, i) => v.setUint8(o + i, c.charCodeAt(0)));
+  w(0, 'RIFF'); v.setUint32(4, 36 + n, true); w(8, 'WAVE'); w(12, 'fmt '); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, 8000, true); v.setUint32(28, 8000, true);
+  v.setUint16(32, 1, true); v.setUint16(34, 8, true); w(36, 'data'); v.setUint32(40, n, true);
+  new Uint8Array(b, 44).fill(128);
+  return URL.createObjectURL(new Blob([b], { type: 'audio/wav' }));
+})();
+
+// ------------------------------------------------------------------ scene
+const host = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+// LITE: phones (and Telegram on phones) get light videos, no bloom, pixel ratio 1, fewer particles;
+// covers load only when their face is opened, and the track always goes first
+const LITE = /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent)
+  || (tg && /^(android|ios)/.test(tg.platform || '')) || Math.min(screen.width, screen.height) < 600 || new URLSearchParams(location.search).has('lite');
+let PR = LITE ? 1 : Math.min(window.devicePixelRatio, 1.5);    // retina at 1.5x is plenty for a glowing cube
+renderer.setPixelRatio(PR);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+host.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x05080b);
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+camera.position.set(0, 0, 7.2);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.35, 0.5, 0.86);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ------------------------------------------------------------------ face textures
+const TEX = 1024;                     // layout units of a face canvas
+const TEX_PX = LITE ? 512 : 1024;     // its real pixel size (phones: half)
+function canvasTexture(draw) {
+  const c = document.createElement('canvas'); c.width = c.height = TEX_PX;
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const ctx = c.getContext('2d');
+  ctx.scale(TEX_PX / TEX, TEX_PX / TEX);   // draw in 1024 layout units at any pixel size
+  return { c, ctx, tex, draw };
+}
+function drawNick(ctx, y, size) {
+  const parts = [['think', '#e8fcff', size], ['<-', '#00e5ff', size], ['s', '#ffffff', size * 1.22],
+                 ['->', '#00e5ff', size], ['inlinks', '#e8fcff', size]];
+  let total = 0;
+  for (const [t, , s] of parts) { ctx.font = `${s}px "Rubik Glitch"`; total += ctx.measureText(t).width; }
+  let x = (TEX - total) / 2;
+  ctx.textBaseline = 'middle';
+  for (const [t, col, s] of parts) {
+    ctx.font = `${s}px "Rubik Glitch"`; ctx.fillStyle = col;
+    ctx.shadowColor = col === '#00e5ff' ? '#00e5ff' : 'transparent'; ctx.shadowBlur = col === '#00e5ff' ? 12 : 0;
+    ctx.fillText(t, x, y); x += ctx.measureText(t).width;
+  }
+  ctx.shadowBlur = 0;
+}
+// ------------------------------------------------------------------ logo «Суккубить»
+// Every side of the square is the same line «суккубить», read in its own direction:
+//            с
+//            у
+//            к
+//      сук ┌к у б и т┐ь        top    → «сук[кубит]ь»      left  ↓ «сук[кубит]ь»
+//          │у       и│         bottom ← «ь[тибук]кус»      right ↑ «ь[тибук]кус»
+//          │б       б│         (bottom/right letters are flipped on both axes)
+//          │и       у│
+//         ь└т и б у к┘кус      Four runners tick towards the two «к» corners (top ←, left ↑, bottom →, right ↓);
+//            ь        к        each arrival flips «к» ↔ «г». While «г» holds, «сук губить» lights up,
+//                     у        while «к» — «суккуб» and «кубит» (and now and then «убить»).
+//                     с        At the start the whole word «суккубить» is lit. A DNA helix runs along the diagonal.
+const LINE = 'суккубить';
+const SIDES = [
+  i => [i - 3, 0],        // top, left to right
+  i => [0, i - 3],        // left, top to bottom
+  i => [7 - i, 4],        // bottom, right to left
+  i => [4, 7 - i],        // right, bottom to top
+];
+const WORDS = { 'суккубить': [0, 8], 'суккуб': [0, 5], 'кубит': [3, 7], 'убить': [4, 8], 'сук': [0, 2], 'губить': [3, 8] };
+const HUE = {
+  'суккубить': ['#ffffff', '#7ff6ff'],  // the title, white-hot
+  'суккуб': ['#ff5a1f', '#ff2200'],     // fire red
+  'кубит':  ['#9ff8ff', '#00e5ff'],     // quantum cyan
+  'убить':  ['#c0001c', '#5c000c'],     // dark blood
+  'сук':    ['#f5c451', '#9a6a10'],     // honey amber, the wood of a branch (сук губить: saw off the branch you sit on)
+  'губить': ['#74ff4a', '#1c9a00'],     // poison green: rot, venom, «губительный»
+};
+const SCORE = [[0, 'суккуб'], [2, 'кубит'], [1, 'суккуб'], [3, 'кубит'], [0, 'кубит'], [2, 'суккуб'],
+               [1, 'кубит'], [3, 'убить'], [0, 'суккуб'], [2, 'кубит'], [1, 'убить'], [3, 'суккуб']];
+// runners: 6 ticks per lap (one hidden, five letter steps); every arrival at the corners flips «к» ↔ «г»
+const TICK = 0.55, LAP = 6 * TICK;
+function logoPhase(t) {
+  t += 0.43;                                                 // the flip lands exactly when the runners reach the corners
+  const lap = Math.floor(t / LAP), l = t - lap * LAP;
+  const g = lap % 2 === 1;                                   // lap 0: «к» (the intro), lap 1: «г», lap 2: «к», …
+  const jolt = l < 0.12 ? 1 : 0;                             // the flip happens with a jolt
+  const fadeIn = Math.min(1, l / 0.4), fadeOut = Math.min(1, (LAP - l) / 0.4);
+  return { lap, l, g, jolt, env: Math.min(fadeIn, fadeOut) };
+}
+function logoMetrics(cell) { const rh = cell * 1.3; return { rh, W: 11 * rh, H: 11 * rh }; }
+function logoWidth(cell) { return logoMetrics(cell).W; }
+function logoHeight(cell) { return logoMetrics(cell).H; }
+function drawLogo(ctx, cx, top, cell, t) {
+  const { rh, W } = logoMetrics(cell);
+  const ox = cx - W / 2 + 3 * rh, oy = top + 3 * rh;          // pixel origin of box cell (0, 0)
+  const X = c => ox + c * rh + rh / 2, Y = r => oy + r * rh + rh / 2;
+  const ph = logoPhase(t);
+  const jit = () => (Math.random() - 0.5) * rh * 0.3 * ph.jolt;
+  // highlights: (side*10 + index) -> { lv, word }
+  const light = new Map();
+  const lit = (sd, word, v) => {
+    const [lo, hi] = WORDS[word];
+    for (let i = lo; i <= hi; i++) { const key = sd * 10 + i, o = light.get(key); if (!o || v > o.lv) light.set(key, { lv: v, word }); }
+  };
+  if (ph.lap === 0) {
+    for (let sd = 0; sd < 4; sd++) lit(sd, 'суккубить', ph.env);                  // the start: the whole word
+  } else if (ph.g) {
+    for (let sd = 0; sd < 4; sd++) { lit(sd, 'сук', ph.env); lit(sd, 'губить', ph.env); }   // «сук губить»
+  } else {
+    const STEP = 1.1, SPAN = 2.2, now = t / STEP;
+    for (let k = Math.floor(now) - 1; k <= Math.floor(now); k++) {
+      const e = SCORE[((k % SCORE.length) + SCORE.length) % SCORE.length], age = (t - k * STEP) / SPAN;
+      if (age >= 0 && age <= 1) lit(e[0], e[1], Math.sin(Math.PI * age) ** 2 * ph.env);
+    }
+  }
+  ctx.save();
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `500 ${cell}px "JetBrains Mono"`;
+  // DNA: a double helix along the diagonal through the two corner «к/г», slowly turning
+  const P0 = [X(-3), Y(-3)], P1 = [X(7), Y(7)], L = Math.hypot(P1[0] - P0[0], P1[1] - P0[1]);
+  const ux = (P1[0] - P0[0]) / L, uy = (P1[1] - P0[1]) / L, nx = -uy, ny = ux, A = rh * 0.55, TURNS = 5, phs = t * 1.4;
+  const strand = (off, col) => {
+    ctx.beginPath();
+    for (let k = 0; k <= 160; k++) {
+      const u = k / 160, w = Math.sin(2 * Math.PI * TURNS * u + phs + off) * A;
+      const x = P0[0] + ux * u * L + nx * w, y = P0[1] + uy * u * L + ny * w;
+      k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+    }
+    ctx.strokeStyle = col; ctx.stroke();
+  };
+  ctx.lineWidth = Math.max(1, cell * 0.05); ctx.shadowBlur = cell * 0.3;
+  ctx.shadowColor = '#00e5ff'; strand(0, 'rgba(0,229,255,0.22)');
+  ctx.shadowColor = '#ff3300'; strand(Math.PI, 'rgba(255,90,40,0.22)');
+  ctx.shadowBlur = 0; ctx.strokeStyle = 'rgba(200,240,255,0.10)';
+  for (let k = 0; k <= TURNS * 6; k++) {
+    const u = (k + 0.5) / (TURNS * 6), a1 = Math.sin(2 * Math.PI * TURNS * u + phs) * A;
+    const bx = P0[0] + ux * u * L, by = P0[1] + uy * u * L;
+    ctx.beginPath(); ctx.moveTo(bx + nx * a1, by + ny * a1); ctx.lineTo(bx - nx * a1, by - ny * a1); ctx.stroke();
+  }
+  // the square
+  ctx.strokeStyle = 'rgba(0,229,255,0.75)'; ctx.lineWidth = Math.max(1, cell * 0.045);
+  ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = cell * 0.25;
+  ctx.strokeRect(ox, oy, 5 * rh, 5 * rh);
+  // letters: shared cells drawn once with the strongest highlight; cells only on sides 2/3 are flipped
+  const cells = new Map();
+  SIDES.forEach((pos, sd) => [...LINE].forEach((ch, i) => {
+    const [c, r] = pos(i), key = c + ',' + r, h = light.get(sd * 10 + i);
+    const corner = i === 3, prev = cells.get(key);
+    const cell_ = prev || { c, r, ch: corner && ph.g ? 'г' : ch, corner, h: null, sides: [] };
+    cell_.sides.push(sd);
+    if (h && (!cell_.h || h.lv > cell_.h.lv)) cell_.h = h;
+    cells.set(key, cell_);
+  }));
+  for (const { c, r, ch, corner, h, sides } of cells.values()) {
+    const x = X(c) + (corner && ph.jolt ? jit() : 0), y = Y(r);
+    const flipped = sides.every(sd => sd >= 2);
+    ctx.save(); ctx.translate(x, y); if (flipped) ctx.scale(-1, -1);
+    if (corner && ph.jolt) {
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = 'rgba(0,229,255,0.85)'; ctx.fillText(ch, -rh * 0.1 + jit(), jit() * 0.3);
+      ctx.fillStyle = 'rgba(116,255,74,0.6)'; ctx.fillText(ch, rh * 0.1 + jit(), 0);
+    }
+    const lv = h ? h.lv : 0;
+    if (lv > 0.02) {
+      const [fill, glow] = HUE[h.word];
+      ctx.shadowColor = glow; ctx.shadowBlur = cell * (0.2 + 0.8 * lv);
+      ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(232,252,255,0.78)'; ctx.fillText(ch, 0, 0);
+      ctx.globalAlpha = lv; ctx.fillStyle = fill; ctx.fillText(ch, 0, 0);
+    } else {
+      ctx.shadowColor = 'rgba(0,229,255,0.35)'; ctx.shadowBlur = cell * 0.15;
+      ctx.fillStyle = 'rgba(232,252,255,0.78)'; ctx.fillText(ch, 0, 0);
+    }
+    ctx.restore();
+  }
+  // four runners tick letter by letter like a second hand, towards the two «к» corners:
+  // top ← and left ↑ end at the top-left «к», bottom → and right ↓ end at the bottom-right «к»
+  const n = t / TICK, k = Math.floor(n) % 6, f = n - Math.floor(n);
+  const step = Math.min(1, f / 0.22), ease = 1 - (1 - step) ** 3;
+  const pos = Math.min(4, k - 1 + ease);                     // 0..4 cells travelled
+  if (k > 0) {
+    const along = i => (4.5 - i) * rh, x1 = ox + 5 * rh, y1 = oy + 5 * rh;   // from the far end towards the corner
+    const fade = k === 5 ? 1 - ease : 1;
+    const dots = [[ox + along(pos), oy], [ox, oy + along(pos)], [x1 - along(pos), y1], [x1, y1 - along(pos)]];
+    ctx.fillStyle = `rgba(200,250,255,${fade})`; ctx.shadowColor = '#00e5ff'; ctx.shadowBlur = cell * 0.6;
+    for (const [x, y] of dots) { ctx.beginPath(); ctx.arc(x, y, Math.max(2.2, cell * 0.12), 0, 7); ctx.fill(); }
+  }
+  ctx.restore();
+}
+
+const LOGO_FACE = { top: 78, cell: 38 };
+// contents: rows are clickable (they turn the cube to the track)
+const ROW_Y0 = 682, ROW_H = 70;
+const contents = canvasTexture((ctx, t) => {
+  ctx.fillStyle = '#080c0f'; ctx.fillRect(0, 0, TEX, TEX);
+  const g = ctx.createRadialGradient(TEX / 2, TEX * 0.95, 50, TEX / 2, TEX * 0.95, TEX * 0.8);
+  g.addColorStop(0, 'rgba(0,120,140,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, TEX, TEX);
+  ctx.strokeStyle = 'rgba(0,229,255,0.07)'; ctx.lineWidth = 1;
+  for (let i = 0; i <= TEX; i += 51.2) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, TEX); ctx.moveTo(0, i); ctx.lineTo(TEX, i); ctx.stroke(); }
+  drawNick(ctx, 46, 36);
+  drawLogo(ctx, TEX / 2, LOGO_FACE.top, LOGO_FACE.cell, t);
+  ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(150, 636); ctx.lineTo(TEX - 150, 636); ctx.stroke();
+  ctx.textAlign = 'left';
+  TRACKS.forEach((tr, i) => {
+    const y = ROW_Y0 + i * ROW_H;
+    ctx.fillStyle = '#00e5ff'; ctx.font = '34px "JetBrains Mono"'; ctx.textAlign = 'center';
+    ctx.fillText(tr.code, 200, y); ctx.fillText(tr.arrow, 262, y); ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = tr.audio ? '#e8fcff' : 'rgba(232,252,255,0.6)'; ctx.font = '500 50px "Cormorant Garamond"';
+    ctx.fillText(tr.title, 310, y);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(310, y + 32); ctx.lineTo(TEX - 175, y + 32); ctx.stroke();
+  });
+});
+// covers still in the works: a probability cloud that keeps re-sampling, with the title
+function placeholder(title, seed) {
+  let s = seed;
+  const rnd = () => (s = (s * 16807) % 2147483647) / 2147483647;
+  return canvasTexture((ctx, t) => {
+    ctx.fillStyle = '#080b0e'; ctx.fillRect(0, 0, TEX, TEX);
+    for (let i = 0; i < 900; i++) {
+      const u = rnd(), v = rnd(), r = Math.sqrt(-2 * Math.log(u + 1e-6)) * 0.2 * TEX;
+      const x = TEX / 2 + r * Math.cos(6.283 * v + t * 0.15), y = TEX / 2 + r * Math.sin(6.283 * v + t * 0.15);
+      ctx.fillStyle = `rgba(0,229,255,${0.15 + 0.5 * rnd()})`; ctx.fillRect(x, y, 2.2, 2.2);
+    }
+    drawNick(ctx, 84, 48);
+    ctx.fillStyle = '#e8fcff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '190px "Comforter"'; ctx.shadowColor = 'rgba(0,229,255,0.6)'; ctx.shadowBlur = 30;
+    ctx.fillText(title, TEX / 2, TEX / 2); ctx.shadowBlur = 0;
+    ctx.font = '34px "JetBrains Mono"'; ctx.fillStyle = 'rgba(0,229,255,0.75)';
+    ctx.fillText('обложка в работе', TEX / 2, TEX * 0.82);
+  });
+}
+const animated = [contents];
+const videos = [];
+function videoTexture(src) {
+  const v = document.createElement('video');
+  Object.assign(v, { muted: true, loop: true, playsInline: true, crossOrigin: 'use-credentials', preload: 'auto' });
+  v.dataset.src = LITE ? src.replace('assets/', 'assets/m/') : src;   // light 360p versions for phones
+  if (LITE) v.preload = 'none';
+  session.then(() => { v.dataset.ready = '1'; if (unlocked) syncVideos(true); });   // the src only after the session cookie
+  v.setAttribute('playsinline', ''); v.setAttribute('webkit-playsinline', '');
+  videos.push(v); v.dataset.face = '';
+  const tex = new THREE.VideoTexture(v); tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+window.__sukkubit = { videos };   // for debugging in the console
+const faceTex = new Array(6);
+faceTex[CONTENTS_FACE] = contents.tex;
+for (const tr of TRACKS) {
+  if (tr.video) { faceTex[tr.face] = videoTexture(tr.video); videos[videos.length - 1].dataset.face = tr.face; }
+  else { const p = placeholder(tr.title, 97 + TRACKS.indexOf(tr) * 31); animated.push(p); faceTex[tr.face] = p.tex; }
+}
+
+// ------------------------------------------------------------------ cube, edges, ghosts, particles
+const geo = new THREE.BoxGeometry(2, 2, 2);
+const cube = new THREE.Mesh(geo, faceTex.map(t => new THREE.MeshBasicMaterial({ map: t })));
+scene.add(cube);
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0.9 });
+const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), edgeMat);
+edges.scale.setScalar(1.004); cube.add(edges);
+
+// superposition ghosts: faint copies that drift apart while the cube is uncertain (moving) and collapse when it settles
+const ghosts = [0, 1].map(i => {
+  const mats = faceTex.map(t => new THREE.MeshBasicMaterial({ map: t, transparent: true, opacity: 0,
+    blending: THREE.AdditiveBlending, depthWrite: false, color: i ? 0x66f2ff : 0xbfefff }));
+  const g = new THREE.Mesh(geo, mats);
+  const e = new THREE.LineSegments(new THREE.EdgesGeometry(geo),
+    new THREE.LineBasicMaterial({ color: 0x00e5ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending }));
+  g.add(e); g.userData.edge = e; scene.add(g); return g;
+});
+
+const PN = LITE ? 500 : 1600, pPos = new Float32Array(PN * 3), pSeed = new Float32Array(PN);
+for (let i = 0; i < PN; i++) {
+  const r = 3 + Math.random() * 9, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
+  pPos.set([r * Math.sin(ph) * Math.cos(th), r * Math.sin(ph) * Math.sin(th), r * Math.cos(ph) - 4], i * 3);
+  pSeed[i] = Math.random() * 100;
+}
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({ color: 0x9ff6ff, size: 0.035, transparent: true,
+  opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending }));
+scene.add(particles);
+
+// probability cloud behind the cube
+const halo = new THREE.Mesh(new THREE.PlaneGeometry(9, 9), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+  uniforms: { uT: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.); }',
+  fragmentShader: `varying vec2 vUv; uniform float uT;
+    void main(){ vec2 p = vUv - .5; float r = length(p);
+      float n = sin(18.*r - uT*1.3)*.5+.5;
+      float a = smoothstep(.45, .05, r) * (.05 + .03*n);
+      gl_FragColor = vec4(0., .55, .65, a); }`,
+}));
+halo.position.z = -2.5; scene.add(halo);
+
+// ------------------------------------------------------------------ interaction
+const target = FACE_Q[CONTENTS_FACE].clone();
+cube.quaternion.setFromEuler(new THREE.Euler(-0.5, 0.9, 0.2));   // intro: the cube settles onto the contents
+let dragging = false, start = null, base = null, uncertainty = 1, current = -1;
+const el = renderer.domElement;
+const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
+
+// globe model: yaw turns the ring of four faces (contents, tracks around it), pitch tilts to the top/bottom face.
+// left turns the cube left, up turns it up; up then down always comes back to the same face
+let yaw = 0, pitch = 0;
+const FACE_YP = { 4: [0, null], 0: [-1, null], 5: [2, null], 1: [1, null], 2: [null, 1], 3: [null, -1] };   // face -> [yaw, pitch]
+function applyTurn() {
+  target.copy(new THREE.Quaternion().setFromAxisAngle(X, pitch * Math.PI / 2)
+    .multiply(new THREE.Quaternion().setFromAxisAngle(Y, yaw * Math.PI / 2)));
+  // keep the top/bottom covers upright whatever ring face we came from
+  faceTex[2].center.set(0.5, 0.5); faceTex[2].rotation = -yaw * Math.PI / 2;
+  faceTex[3].center.set(0.5, 0.5); faceTex[3].rotation = yaw * Math.PI / 2;
+  showFace(faceTowardsCamera(target));          // the player switches right away, not after the cube settles
+}
+// magnet pull: the cube flies towards the magnet of the turn direction and springs back
+const PULL = { left: [-1, 0], right: [1, 0], up: [0, 1], down: [0, -1] };
+let pull = null;                                             // { dir, t0 }
+function pullAmount(t) {
+  if (!pull) return null;
+  const a = t - pull.t0, e = x => x * x * (3 - 2 * x);
+  if (a < 0 || a > 1.0) return null;
+  return { dir: pull.dir, v: a < 0.3 ? e(a / 0.3) : a < 0.4 ? 1 : 1 - e((a - 0.4) / 0.6) };
+}
+function magnetFlash(dir) {
+  pull = { dir, t0: clock.elapsedTime };
+  const m = document.getElementById(dir);
+  m.classList.remove('pull'); void m.offsetWidth; m.classList.add('pull');
+  setTimeout(() => m.classList.remove('pull'), 700);
+  if (tg && tg.HapticFeedback) try { tg.HapticFeedback.impactOccurred('light'); } catch (e) {}
+}
+// swipes and arrow keys turn the cube relative to where it is, like a puzzle cube
+function turn(dir) {
+  unlockMedia();
+  magnetFlash(dir);
+  if (dir === 'left' || dir === 'right') {
+    pitch = 0;                                   // from the top/bottom a side swipe drops back onto the ring
+    yaw += dir === 'left' ? -1 : 1;
+  } else {
+    pitch = Math.max(-1, Math.min(1, pitch + (dir === 'up' ? -1 : 1)));
+  }
+  applyTurn();
+}
+el.addEventListener('pointerdown', e => {
+  dragging = true; start = { x: e.clientX, y: e.clientY, t: performance.now() }; base = cube.quaternion.clone();
+  el.setPointerCapture(e.pointerId); unlockMedia();
+});
+el.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  // the cube leans after the finger (up to ~30 degrees) so the gesture feels physical
+  const dx = e.clientX - start.x, dy = e.clientY - start.y;
+  const horiz = Math.abs(dx) > Math.abs(dy);
+  const a = Math.max(-0.55, Math.min(0.55, (horiz ? dx : dy) * 0.004));
+  cube.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(horiz ? Y : X, a).multiply(base));
+});
+el.addEventListener('pointerup', e => {
+  if (!dragging) return;
+  dragging = false;
+  const dx = e.clientX - start.x, dy = e.clientY - start.y, dist = Math.hypot(dx, dy);
+  const fast = dist > 18 && performance.now() - start.t < 250;
+  if (dist > 45 || fast) {
+    if (Math.abs(dx) > Math.abs(dy)) turn(dx < 0 ? 'left' : 'right'); else turn(dy < 0 ? 'up' : 'down');
+  } else if (dist < 8) tap(e);
+});
+el.addEventListener('pointercancel', () => { dragging = false; });
+window.addEventListener('keydown', e => {
+  const k = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down' }[e.key];
+  if (k) { e.preventDefault(); turn(k); }
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
+});
+// each magnet belongs to its track: it always pulls the cube to that face; on its own face it plays/pauses
+const MAG_TRACK = { left: '00', right: '01', down: '10', up: '11' };   // helmet → Rewind, horseshoe → Вы правы, pill → Теневой опцион, snake & phoenix → Новая фаза
+for (const d of Object.keys(MAG_TRACK)) document.getElementById(d).onclick = () => {
+  unlockMedia();
+  const tr = TRACKS.find(t => t.code === MAG_TRACK[d]);
+  magnetFlash(d);
+  if (current === tr.face) toggle(); else goTo(tr.face);
+};
+
+const NORMALS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]].map(n => new THREE.Vector3(...n));
+function faceTowardsCamera(q) {
+  let best = 0, bz = -2;
+  NORMALS.forEach((n, i) => { const z = n.clone().applyQuaternion(q).z; if (z > bz) { bz = z; best = i; } });
+  return best;
+}
+function nearestFace() { return faceTowardsCamera(cube.quaternion); }
+function goTo(face) {
+  const [y, p] = FACE_YP[face];
+  if (y !== null) { yaw = yaw + ((((y - yaw) % 4) + 6) % 4) - 2; pitch = 0; }   // nearest equivalent yaw
+  else pitch = p;
+  applyTurn();
+}
+
+// tap: on the contents face a row turns the cube to its track; on a track face it toggles play
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+function tap(e) {
+  const r = el.getBoundingClientRect();
+  ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(cube, false)[0];
+  if (!hit) return;
+  const face = hit.face.materialIndex;
+  if (face === CONTENTS_FACE) {
+    const y = (1 - hit.uv.y) * TEX;
+    const i = Math.floor((y - ROW_Y0 + ROW_H / 2) / ROW_H);
+    if (i >= 0 && i < TRACKS.length) goTo(TRACKS[i].face);
+  } else if (face === current) {
+    toggle();
+  } else goTo(face);
+}
+const audio = new Audio(); audio.preload = 'none';
+let unlocked = false;
+function unlockMedia() { if (unlocked) return; unlocked = true; syncVideos(true); }
+// only the faces turned towards the viewer (or about to be) decode their video; the rest are paused
+let videosNext = 0;
+function syncVideos(force) {
+  const t = clock.elapsedTime;
+  if (!force && t < videosNext) return; videosNext = t + 0.25;
+  const target_ = faceTowardsCamera(target);
+  for (const v of videos) {
+    const f = +v.dataset.face, z = NORMALS[f].clone().applyQuaternion(cube.quaternion).z;
+    const want = z > 0.2 || f === target_;          // side faces seen edge-on (z ≈ 0) stay paused
+    if (want && !v.src && v.dataset.ready && (!LITE || f === target_)) {   // phones: only the face being opened
+      // lazy: the video is fetched the first time its face is wanted; on a phone not while a track is still buffering
+      if (LITE && !audio.paused && audio.readyState < 3) continue;
+      v.src = v.dataset.src;
+    }
+    if (want && v.src && v.paused) v.play().catch(() => {});
+    else if (!want && !v.paused) v.pause();
+  }
+}
+
+// ------------------------------------------------------------------ audio player
+
+let playingTrack = null;
+const $ = id => document.getElementById(id);
+const PLAY = '<path d="M8 5v14l11-7z"/>', PAUSE = '<path d="M6 5h4v14H6zm8 0h4v14h-4z"/>';
+const trackOnFace = f => TRACKS.find(t => t.face === f);
+function fmt(s) { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60); return `${m}:${String(Math.floor(s % 60)).padStart(2, '0')}`; }
+
+function showFace(f) {
+  current = f;
+  const tr = trackOnFace(f);
+  if (!tr) {
+    $('title').textContent = 'Суккубить';
+    $('hint').textContent = 'свайп или магнит';
+    $('play').disabled = true; $('time').textContent = '';
+  } else {
+    $('title').innerHTML = `<span class="num">${tr.code}${tr.arrow ? ' ' + tr.arrow : ''}</span>${tr.title}`;
+    $('play').disabled = !tr.audio;
+    $('hint').textContent = tr.audio ? '' : 'скоро';
+  }
+  syncUI();
+}
+let loadTurn = 0;
+function toggle() {
+  const tr = trackOnFace(current);
+  if (!tr || !tr.audio) return;
+  if (playingTrack === tr && audio.src) {
+    if (audio.paused) audio.play().catch(() => {}); else audio.pause();
+  } else {
+    const turn = ++loadTurn;
+    if (!audio.src) { audio.src = SILENT; audio.play().catch(() => {}); }   // unlock inside the tap
+    $('hint').textContent = 'загрузка…';
+    Promise.all([session, trackSrc(tr)]).then(([, src]) => {
+      if (turn !== loadTurn) return;
+      audio.src = src; playingTrack = tr; audio.play().catch(() => {});
+      if (current === tr.face) $('hint').textContent = '';
+    }).catch(() => { if (turn === loadTurn) $('hint').textContent = 'нет доступа к треку'; });
+  }
+  if (tg && tg.HapticFeedback) try { tg.HapticFeedback.impactOccurred('light'); } catch (e) {}
+}
+function syncUI() {
+  const tr = trackOnFace(current);
+  const mine = tr && playingTrack === tr;
+  $('icon').innerHTML = mine && !audio.paused ? PAUSE : PLAY;
+  $('fill').style.width = mine && audio.duration ? `${(audio.currentTime / audio.duration) * 100}%` : '0';
+  if (tr && tr.audio) $('time').textContent = mine ? `${fmt(audio.currentTime)} / ${fmt(audio.duration)}` : '';
+}
+$('play').onclick = () => { unlockMedia(); toggle(); };
+['timeupdate', 'play', 'pause', 'loadedmetadata', 'ended'].forEach(ev => audio.addEventListener(ev, syncUI));
+function seek(e) {
+  const tr = trackOnFace(current);
+  if (!tr || playingTrack !== tr || !audio.duration) return;
+  const r = $('bar').getBoundingClientRect();
+  audio.currentTime = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)) * audio.duration;
+}
+$('bar').addEventListener('pointerdown', e => { seek(e); $('bar').setPointerCapture(e.pointerId); });
+$('bar').addEventListener('pointermove', e => { if (e.buttons) seek(e); });
+
+// ------------------------------------------------------------------ loop
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight;
+  renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(w * 0.5, h * 0.5);   // bloom at half resolution: it is a blur anyway
+  camera.aspect = w / h;
+  // keep the cube comfortably inside narrow (phone) screens
+  camera.position.z = Math.max(6.6, 1.8 / (Math.tan(THREE.MathUtils.degToRad(18)) * camera.aspect));  // room for the magnets on a phone
+  camera.updateProjectionMatrix();
+  const fx = document.getElementById('fx'), dpr = Math.min(window.devicePixelRatio || 1, 2);
+  fx.width = w * dpr; fx.height = h * dpr; fx.style.width = w + 'px'; fx.style.height = h + 'px';
+  layoutMagnets();
+}
+// the four magnets sit on a circle around the cube centre (the screen centre), at the same distance R
+const MAG_V = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };   // screen directions
+let PX_PER_UNIT = 1, CUBE_HALF = 100, MAG_R = 150;
+function layoutMagnets() {
+  const w = host.clientWidth, h = host.clientHeight;
+  PX_PER_UNIT = (h / 2) / (camera.position.z * Math.tan(THREE.MathUtils.degToRad(18)));
+  CUBE_HALF = PX_PER_UNIT * 1.0;                                // the cube is 2 units wide
+  const MAG = w >= 700 ? 96 : 60;                               // bigger magnets on a desktop
+  document.documentElement.style.setProperty('--mag', MAG + 'px');
+  const roomy = w >= 700;                                       // desktop: out towards the window edges
+  MAG_R = Math.min(w / 2 - MAG * 0.6, h / 2 - MAG * 0.6, roomy ? Infinity : CUBE_HALF + 100);
+  for (const [d, [vx, vy]] of Object.entries(MAG_V)) {
+    const m = document.getElementById(d);
+    m.style.left = (w / 2 + vx * MAG_R) + 'px'; m.style.top = (h / 2 + vy * MAG_R) + 'px';
+  }
+}
+window.addEventListener('resize', resize); resize();
+for (const id of ['logo']) document.getElementById(id).addEventListener('click', () => { unlockMedia(); goTo(CONTENTS_FACE); });
+// ∆ flies around the screen and bounces off the window edges and the faces of the cube
+const deltaEl = document.getElementById('delta');
+const D = { x: 0, y: 0, vx: 70, vy: -55, r: 30, spin: 0, init: false };
+function deltaBounce() { deltaEl.classList.add('hit'); clearTimeout(D.tm); D.tm = setTimeout(() => deltaEl.classList.remove('hit'), 160); }
+function updateDelta(dt) {
+  const w = host.clientWidth, h = host.clientHeight;
+  if (!D.init) { D.x = w * 0.82; D.y = h * 0.78; D.init = true; }
+  D.r = (w >= 700 ? 96 : 60) / 2;                             // the same size as the magnets
+  D.x += D.vx * dt; D.y += D.vy * dt; D.spin += (D.vx > 0 ? 1 : -1) * dt * 40;
+  if (D.x < D.r) { D.x = D.r; D.vx = Math.abs(D.vx); deltaBounce(); }
+  if (D.x > w - D.r) { D.x = w - D.r; D.vx = -Math.abs(D.vx); deltaBounce(); }
+  if (D.y < D.r) { D.y = D.r; D.vy = Math.abs(D.vy); deltaBounce(); }
+  if (D.y > h - D.r) { D.y = h - D.r; D.vy = -Math.abs(D.vy); deltaBounce(); }
+  // the cube: a square around its screen position
+  const cx = w / 2 + cube.position.x * PX_PER_UNIT, cy = h / 2 - cube.position.y * PX_PER_UNIT, hs = CUBE_HALF * 1.04 + D.r * 0.8;
+  const dx = D.x - cx, dy = D.y - cy;
+  if (Math.abs(dx) < hs && Math.abs(dy) < hs) {
+    if (hs - Math.abs(dx) < hs - Math.abs(dy)) { D.x = cx + Math.sign(dx) * hs; D.vx = Math.sign(dx) * Math.abs(D.vx); }
+    else { D.y = cy + Math.sign(dy) * hs; D.vy = Math.sign(dy) * Math.abs(D.vy); }
+    deltaBounce();
+  }
+  deltaEl.style.transform = `translate(${D.x}px, ${D.y}px) rotate(${Math.sin(D.spin * 0.05) * 12}deg)`;
+}
+// ∆ belongs to «Квант» like a magnet: the first tap turns the cube there, the next one plays/pauses
+document.getElementById('delta').addEventListener('click', () => {
+  unlockMedia();
+  const f = TRACKS.find(t => t.code === '∆').face;
+  if (current === f) toggle(); else goTo(f);
+});
+
+// ---------------- electric pull: lightning between the magnet and the cube
+const fxCtx = document.getElementById('fx').getContext('2d');
+function bolt(ctx, x0, y0, x1, y1, spread, depth) {
+  // midpoint displacement: a jagged lightning path
+  let pts = [[x0, y0], [x1, y1]];
+  for (let d = 0; d < depth; d++) {
+    const np = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const [ax, ay] = pts[i - 1], [bx, by] = pts[i], L = Math.hypot(bx - ax, by - ay);
+      const off = (Math.random() - 0.5) * spread * L / Math.hypot(x1 - x0, y1 - y0);
+      np.push([(ax + bx) / 2 + (-(by - ay) / L) * off, (ay + by) / 2 + ((bx - ax) / L) * off], [bx, by]);
+    }
+    pts = np;
+  }
+  ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke();
+}
+let idleArc = { t: 2.5, d: 'left' };
+function drawFx(t, pa) {
+  const w = host.clientWidth, h = host.clientHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+  fxCtx.setTransform(dpr, 0, 0, dpr, 0, 0); fxCtx.clearRect(0, 0, w, h);
+  fxCtx.globalCompositeOperation = 'lighter'; fxCtx.lineCap = 'round'; fxCtx.lineJoin = 'round';
+  const cx = w / 2 + cube.position.x * PX_PER_UNIT, cy = h / 2 - (cube.position.y) * PX_PER_UNIT;
+  const arcs = [];
+  if (pa && pa.v > 0.03) arcs.push([pa.dir, Math.min(1, pa.v * 1.4), 5]);
+  // now and then a faint idle spark on a random magnet, so the magnets feel alive
+  if (t > idleArc.t) { idleArc = { t: t + 2.5 + Math.random() * 3, d: ['left', 'right', 'up', 'down'][Math.floor(Math.random() * 4)], s: t }; }
+  if (idleArc.s !== undefined && t - idleArc.s < 0.18 && !(pa && pa.dir === idleArc.d)) arcs.push([idleArc.d, 0.35, 1]);
+  for (const [d, v, n] of arcs) {
+    const [vx, vy] = MAG_V[d];
+    const mx = w / 2 + vx * MAG_R, my = h / 2 + vy * MAG_R;
+    const ex = cx + vx * CUBE_HALF * 0.98, ey = cy + vy * CUBE_HALF * 0.98;     // the cube edge facing the magnet
+    const L = Math.hypot(ex - mx, ey - my), px = -vy, py = vx;
+    for (let k = 0; k < n + 2; k++) {
+      const side = (k - (n + 1) / 2) * 9;                  // poles: one end of the horseshoe each
+      const col = k % 2 ? '0,229,255' : '255,80,60';
+      const sx = mx - vx * 4 + px * side * 0.9, sy = my - vy * 4 + py * side * 0.9;
+      const tx = ex + px * side * 3.2 * (1 + Math.random()), ty = ey + py * side * 3.2 * (1 + Math.random());
+      fxCtx.strokeStyle = `rgba(${col},${0.6 * v})`; fxCtx.lineWidth = 9; fxCtx.shadowBlur = 0;
+      bolt(fxCtx, sx, sy, tx, ty, Math.max(14, L * 0.35), 6);
+      fxCtx.strokeStyle = `rgba(240,253,255,${v})`; fxCtx.lineWidth = 2.2;
+      bolt(fxCtx, sx, sy, tx, ty, Math.max(10, L * 0.25), 6);
+    }
+    // a glow where the field hits the cube
+    const g = fxCtx.createRadialGradient(ex, ey, 0, ex, ey, 70 * v + 10);
+    g.addColorStop(0, `rgba(160,245,255,${0.7 * v})`); g.addColorStop(1, 'rgba(0,229,255,0)');
+    fxCtx.fillStyle = g; fxCtx.fillRect(ex - 90, ey - 90, 180, 180);
+  }
+  fxCtx.globalCompositeOperation = 'source-over';
+}
+
+// header logo: the same drawing on a small canvas
+const logoCv = document.getElementById('logo'), LOGO_CELL = 9;
+const logoCtx = logoCv.getContext('2d');
+let logoNext = 0;
+function drawHeaderLogo(t) {
+  if (t < logoNext) return; logoNext = t + 0.08;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = logoWidth(LOGO_CELL) + 12, h = logoHeight(LOGO_CELL) + 8;
+  if (logoCv.width !== Math.round(w * dpr)) { logoCv.width = Math.round(w * dpr); logoCv.height = Math.round(h * dpr);
+    logoCv.style.width = w + 'px'; logoCv.style.height = h + 'px'; }
+  logoCtx.setTransform(dpr, 0, 0, dpr, 0, 0); logoCtx.clearRect(0, 0, w, h);
+  drawLogo(logoCtx, w / 2, 4, LOGO_CELL, t);
+}
+
+const clock = new THREE.Clock();
+let useBloom = !LITE, slowFor = 0, avgDt = 1 / 60;
+function adapt(dt) {
+  avgDt = avgDt * 0.95 + dt * 0.05;
+  slowFor = avgDt > 1 / 40 ? slowFor + dt : 0;
+  if (slowFor > 2) {                                   // two seconds under ~40 fps: step the quality down
+    slowFor = 0;
+    if (PR > 1) { PR = 1; renderer.setPixelRatio(1); composer.setPixelRatio(1); resize(); }
+    else if (useBloom) useBloom = false;
+    else if (LITE && PR > 0.75) { PR = 0.75; renderer.setPixelRatio(PR); composer.setPixelRatio(PR); resize(); }
+  }
+}
+let collapse = 0, settledFace = -1;
+function frame() {
+  const dt = Math.min(clock.getDelta(), 0.05), t = clock.elapsedTime;
+  if (!dragging) cube.quaternion.slerp(target, 1 - Math.pow(0.002, dt));
+  // uncertainty: high while the cube is moving, collapses to 0 when it settles on a face
+  const off = cube.quaternion.angleTo(target);
+  const moving = dragging || off > 0.02;
+  uncertainty += ((moving ? 1 : 0) - uncertainty) * (moving ? 0.08 : 0.12);
+  const f = nearestFace();
+  if (!moving && off < 0.02 && settledFace !== f) { settledFace = f; collapse = 1; showFace(f); }
+  if (moving) settledFace = -1;
+  collapse *= 0.9;
+  // idle life: the cube floats and breathes a little around its face
+  const bob = Math.sin(t * 1.1) * 0.06;
+  const pa = pullAmount(t);
+  const reach = Math.max(0, MAG_R - CUBE_HALF - 50) / PX_PER_UNIT;   // stop just short of the magnet
+  cube.position.x = pa ? PULL[pa.dir][0] * pa.v * reach : 0;
+  cube.position.y = bob + (pa ? PULL[pa.dir][1] * pa.v * reach : 0);
+  const sway = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.sin(t * 0.7) * 0.035, Math.sin(t * 0.5) * 0.05, 0));
+  const shown = cube.quaternion.clone();
+  cube.quaternion.multiply(sway);
+  ghosts.forEach((g, i) => {
+    const s = i ? 1 : -1, u = uncertainty * 0.9 + Math.max(0, Math.sin(t * 0.9 + i * 2.1)) ** 8 * 0.35;
+    g.quaternion.copy(cube.quaternion).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0.12 * s * u, -0.2 * s * u, 0.05 * u)));
+    g.position.set(cube.position.x + 0.55 * s * u, cube.position.y - 0.15 * s * u, -0.2 * u);
+    g.material.forEach(m => { m.opacity = 0.16 * u; });
+    g.userData.edge.material.opacity = 0.5 * u;
+    g.visible = !LITE && u > 0.02;            // phones: no ghost copies (two extra cube renders)
+  });
+  edgeMat.opacity = 0.75 + 0.25 * Math.sin(t * 2.3) + collapse;
+  bloom.strength = 0.3 + collapse * 0.8;
+  halo.material.uniforms.uT.value = t;
+  particles.rotation.y = t * 0.02; particles.rotation.x = Math.sin(t * 0.1) * 0.05;
+  for (const a of animated) {
+    // canvas faces are expensive (2D shadows + a 1024² upload): ~12 fps, and only while the face can be seen
+    const fz = NORMALS[a === contents ? CONTENTS_FACE : faceTex.indexOf(a.tex)].clone().applyQuaternion(cube.quaternion).z;
+    if (fz > 0.2 && t >= (a.next || 0)) { a.draw(a.ctx, t); a.tex.needsUpdate = true; a.next = t + (a === contents ? 0.08 : 0.15); }
+  }
+  drawHeaderLogo(t);
+  syncVideos(false);
+  adapt(dt);
+  if (useBloom) composer.render(); else renderer.render(scene, camera);
+  drawFx(t, pa);
+  updateDelta(dt);
+  cube.quaternion.copy(shown);
+  requestAnimationFrame(frame);
+}
+// draw canvases once the web fonts are ready (redraw the contents face after that)
+Promise.all(['48px "Rubik Glitch"', '62px "Cormorant Garamond"', '500 40px "JetBrains Mono"']
+  .map(f => document.fonts.load(f)));
+showFace(CONTENTS_FACE);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
