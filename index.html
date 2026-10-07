@@ -556,7 +556,7 @@ const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0);
 let yaw = 0, pitch = 0;
 let FREE = store.get('sk-mode') === 'кубик';           // the easter egg in the nick switches it
 let seeking = false;                                   // free mode: flying to a chosen face
-const SPIN = 0.0045 / 4;                               // radians per pixel of drag
+const SPIN = (LITE ? 4 : 1) * 0.0045 / 4;              // radians per pixel of drag; phones: 4x (a finger moves fewer pixels)
 const COAST = 1;                                       // free spin after release keeps the speed of the (halved) drag
 let INERTIA = Math.min(1, Math.max(0, parseFloat(store.get('sk-inertia') ?? '0.5') || 0));
 const inertiaHalfLife = () => 0.08 + INERTIA * INERTIA * 3.0;   // seconds for the spin to halve: 0.08 … 3.1 (default ≈ 0.8)
