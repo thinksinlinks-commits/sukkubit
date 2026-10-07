@@ -61,6 +61,7 @@
   #stage-native { position: fixed; inset: 0; z-index: 5; display: none; background: #05080b; overflow: hidden; }
   body.native #stage-native { display: block; }
   #stage-amb { position: absolute; inset: -6%; width: 112%; height: 112%; filter: blur(28px) brightness(.34) saturate(1.15); }
+  body.wide #stage-native video { width: min(100vw, 100vh * 16 / 9); height: min(100vh, 100vw * 9 / 16); }
   #stage-native video { position: absolute; inset: 0; margin: auto; width: min(98vw, 98vh); height: min(98vw, 98vh); object-fit: cover;
     --fade: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent);
     -webkit-mask-image: var(--fade); mask-image: var(--fade); -webkit-mask-composite: source-in; mask-composite: intersect; }
@@ -154,7 +155,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Квант (∆) is opposite the contents: two turns away. The binary codes 00/01/10/11 sit on the four neighbours.
 const TRACKS = [
   { code: '∆',  arrow: '',  title: 'Квант',          face: 5, video: 'assets/kvant.mp4', full: 'assets/kvant-full.mp4', audio: 'assets/kvant.mp3.bin' },
-  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4', full: 'assets/rewind-full.mp4', audio: 'assets/rewind.m4a.bin' },
+  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4', full: 'assets/rewind-clip.mp4', sync: true, wide: true, audio: 'assets/rewind.m4a.bin' },
   { code: '01', arrow: '→', title: 'Вы правы',       face: 1, video: 'assets/vy-pravy.mp4',       audio: 'assets/vy-pravy.mp3.bin' },
   { code: '10', arrow: '↓', title: 'Теневой опцион', face: 2, video: 'assets/tenevoy-option.mp4', audio: 'assets/tenevoy-option.mp3.bin' },
   { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4', full: 'assets/novaya-faza-full.mp4', audio: 'assets/novaya-faza.mp3.bin' },
@@ -794,20 +795,21 @@ const stageTex = new THREE.VideoTexture(stageVideo);       // raw colours: the s
 const stageScene = new THREE.Scene(), stageCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 const stageMat = new THREE.ShaderMaterial({
   transparent: true, depthTest: false, depthWrite: false,
-  uniforms: { map: { value: stageTex }, p: { value: 0 }, t: { value: 0 }, aspect: { value: 1 }, ready: { value: 0 } },
+  uniforms: { map: { value: stageTex }, p: { value: 0 }, t: { value: 0 }, aspect: { value: 1 }, va: { value: 1 }, ready: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
   fragmentShader: `
-    varying vec2 vUv; uniform sampler2D map; uniform float p, t, aspect, ready;
+    varying vec2 vUv; uniform sampler2D map; uniform float p, t, aspect, va, ready;
     float h(vec2 q){ return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
     float n(vec2 q){ vec2 i = floor(q), f = fract(q); f = f*f*(3.-2.*f);
       return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
     void main(){
       vec2 sc = vec2((vUv.x - .5) * aspect, vUv.y - .5);              // screen space, 1 = screen height
-      float side = min(aspect, 1.) * .98;                               // the square video, as large as fits
-      vec2 vu = sc / side + .5;
+      float hh = min(1., aspect / va) * .98;                             // the video (square or 16:9), as large as fits
+      vec2 vu = vec2(sc.x / (hh * va), sc.y / hh) + .5;
       vec3 bg = vec3(.02, .031, .043);
       // the edges: the same video, scaled to cover the screen, blurred, darkened, with a cool tint
-      vec2 cu = sc / max(aspect, 1.) * .92 + .5;
+      float ch = max(1., aspect / va);                                   // the blurred edges: the video covering the screen
+      vec2 cu = vec2(sc.x / (ch * va), sc.y / ch) * .92 + .5;
       vec3 amb = vec3(0.);
       for (int i = 0; i < 12; i++) {
         float ang = float(i) * 2.39996, r = .012 + .03 * fract(float(i) * .618);
@@ -836,10 +838,19 @@ function openStage(tr) {
   if (!name) return;
   if (stageTrack !== tr) {
     stageTrack = tr; stageMat.uniforms.ready.value = 0;
-    session.then(() => { stageVideo.src = QDIR[QUALITY] + name; stageVideo.play().catch(() => {}); });
+    stageVideo.loop = !tr.sync;
+    stageMat.uniforms.va.value = tr.wide ? 16 / 9 : 1;
+    document.body.classList.toggle('wide', !!tr.wide);
+    session.then(() => { stageVideo.src = QDIR[QUALITY] + name; syncStage(true); if (!audio.paused || !tr.sync) stageVideo.play().catch(() => {}); });
   } else stageVideo.play().catch(() => {});
   stageTo = 1; document.body.classList.add('staged');
 }
+// a clip made for the track follows the track's time (seek, pause), the others just loop
+function syncStage(force) {
+  if (!stageTrack || !stageTrack.sync || playingTrack !== stageTrack || !stageVideo.src) return;
+  if (force || Math.abs(stageVideo.currentTime - audio.currentTime) > 0.25) { try { stageVideo.currentTime = audio.currentTime; } catch (e) {} }
+}
+audio.addEventListener('seeked', () => syncStage(true));
 function closeStage() { stageTo = 0; document.body.classList.remove('staged'); leaveFullscreen(); }
 // real fullscreen hides the browser / Telegram chrome; it must be asked inside a tap
 function enterFullscreen() {
@@ -868,6 +879,7 @@ function stageFrame(dt) {
   if (!stageTo && stageP <= 0 && !stageVideo.paused) stageVideo.pause();
   stageMat.uniforms.p.value = stageP;
   stageMat.uniforms.aspect.value = camera.aspect;
+  if (stageTo) syncStage(false);
   document.body.classList.toggle('can-expand', !!(playingTrack && (playingTrack.full || playingTrack.video)));
   const open = stageTo === 1 && stageP >= 1;
   document.body.classList.toggle('native', open);
