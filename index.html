@@ -56,7 +56,6 @@
     background: none; color: var(--cyan); cursor: pointer; display: none; place-items: center; padding: 0; font: 15px/1 sans-serif; }
   body.can-expand #stagebtn { display: grid; }
   body.can-expand #dl { right: 44px; }
-  body.staged .magnet, body.staged #delta, body.staged #logo, body.staged #fx, body.staged #inertia { visibility: hidden; }
   /* the open stage is a plain <video> (hardware decoding) on the blurred 32x32 copy of itself */
   #stage-native { position: fixed; inset: 0; z-index: 5; display: none; background: #05080b; overflow: hidden; }
   body.native #stage-native { display: block; }
@@ -845,6 +844,23 @@ function openStage(tr) {
   } else stageVideo.play().catch(() => {});
   stageTo = 1; document.body.classList.add('staged');
 }
+// the icons around the cube appear (and vanish) exactly when the dissolve front passes over them
+const FRONT_EL = ['left', 'right', 'up', 'down', 'delta', 'logo', 'fx', 'inertia'].map(id => document.getElementById(id));
+function revealByFront() {
+  const w = host.clientWidth, h = host.clientHeight, front = stageP * 1.6 - .08;
+  for (const el of FRONT_EL) {
+    if (!el) continue;
+    let a = 1;
+    if (stageP >= 0.999) a = 0;
+    else if (stageP > 0.001) {
+      const r = el.getBoundingClientRect();
+      const cx = el.id === 'fx' ? w / 2 : r.left + r.width / 2, cy = el.id === 'fx' ? h / 2 : r.top + r.height / 2;
+      const field = Math.hypot((cx / w - .5) * w / h, cy / h - .5) * .75 + .175;   // the shader's front, without its noise
+      a = Math.min(1, Math.max(0, (field - front) / .06));
+    }
+    el.style.opacity = a; el.style.pointerEvents = a < .5 ? 'none' : '';
+  }
+}
 // a clip made for the track follows the track's time (seek, pause), the others just loop
 function syncStage(force) {
   if (!stageTrack || !stageTrack.sync || playingTrack !== stageTrack || !stageVideo.src) return;
@@ -880,6 +896,7 @@ function stageFrame(dt) {
   stageMat.uniforms.p.value = stageP;
   stageMat.uniforms.aspect.value = camera.aspect;
   if (stageTo) syncStage(false);
+  revealByFront();
   document.body.classList.toggle('can-expand', !!(playingTrack && (playingTrack.full || playingTrack.video)));
   const open = stageTo === 1 && stageP >= 1;
   document.body.classList.toggle('native', open);
