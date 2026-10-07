@@ -52,6 +52,20 @@
   .logo { position: fixed; z-index: 4; pointer-events: auto; cursor: pointer; }   /* a tap brings the cube back to the contents */
   #logo { left: calc(6px + env(safe-area-inset-left)); top: calc(6px + env(safe-area-inset-top)); }
   /* ∆ in the bottom-right corner: straight to «Квант», the face opposite the contents */
+  #stagebtn { position: absolute; right: 10px; top: 8px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
+    background: none; color: var(--cyan); cursor: pointer; display: none; place-items: center; padding: 0; font: 15px/1 sans-serif; }
+  body.can-expand #stagebtn { display: grid; }
+  body.can-expand #dl { right: 44px; }
+  body.staged .magnet, body.staged #delta, body.staged #logo, body.staged #fx, body.staged #inertia { visibility: hidden; }
+  /* the open stage is a plain <video> (hardware decoding) on the blurred 32x32 copy of itself */
+  #stage-native { position: fixed; inset: 0; z-index: 5; display: none; background: #05080b; overflow: hidden; }
+  body.native #stage-native { display: block; }
+  #stage-amb { position: absolute; inset: -6%; width: 112%; height: 112%; filter: blur(28px) brightness(.34) saturate(1.15); }
+  #stage-native video { position: absolute; inset: 0; margin: auto; width: min(98vw, 98vh); height: min(98vw, 98vh); object-fit: cover;
+    --fade: linear-gradient(to right, transparent, #000 3%, #000 97%, transparent), linear-gradient(to bottom, transparent, #000 3%, #000 97%, transparent);
+    -webkit-mask-image: var(--fade); mask-image: var(--fade); -webkit-mask-composite: source-in; mask-composite: intersect; }
+  body.staged #quality { z-index: 6; }
+  footer { z-index: 6; }
   #delta { position: fixed; left: 0; top: 0; z-index: 4; width: var(--mag, 60px); height: var(--mag, 60px); margin: calc(var(--mag, 60px) / -2) 0 0 calc(var(--mag, 60px) / -2);
     border: none; background: none; cursor: pointer; padding: 0 0 6px; display: grid; place-items: center;
     color: #bff8ff; font: 500 calc(var(--mag, 60px) * 1.05)/1 'JetBrains Mono', monospace; will-change: transform;
@@ -73,7 +87,7 @@
   .play:active { transform: scale(0.94); }
   .play:disabled { opacity: 0.35; cursor: default; box-shadow: none; }
   .play svg { width: 22px; height: 22px; fill: currentColor; }
-  .meta { padding-right: 30px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
+  .meta { padding-right: 70px; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; min-width: 0; }
   .title { font-size: 24px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .num { font-family: 'JetBrains Mono', monospace; font-size: 15px; color: var(--cyan); margin-right: 10px; vertical-align: 3px; }
   .time { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); flex-shrink: 0; }
@@ -108,11 +122,13 @@
 <button class="nav magnet" id="right" aria-label="Магнит справа"><img src="assets/mag-right.png" alt="" draggable="false"></button>
 <button class="nav magnet" id="up" aria-label="Магнит сверху"><img src="assets/mag-up.png" alt="" draggable="false"></button>
 <button class="nav magnet" id="down" aria-label="Магнит снизу"><img src="assets/mag-down.png" alt="" draggable="false"></button>
+<div id="stage-native"><canvas id="stage-amb" width="32" height="32"></canvas></div>
 <footer>
   <div class="player">
     <button class="play" id="play" aria-label="Играть" disabled>
       <svg id="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
     </button>
+    <button id="stagebtn" aria-label="Развернуть на весь экран" title="Развернуть на весь экран">⤢</button>
     <button id="dl" aria-label="Скачать альбом на устройство" title="Скачать альбом на устройство">⤓</button>
     <div class="meta"><div class="title" id="title">Суккубить</div><div class="time" id="time"></div></div>
     <div class="bar" id="bar"><div class="fill" id="fill"></div><div class="hint" id="hint"></div></div>
@@ -137,11 +153,11 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // code: the track's number in the contents; arrow: the swipe/arrow that brings it from the contents.
 // Квант (∆) is opposite the contents: two turns away. The binary codes 00/01/10/11 sit on the four neighbours.
 const TRACKS = [
-  { code: '∆',  arrow: '',  title: 'Квант',          face: 5, video: 'assets/kvant.mp4',          audio: 'assets/kvant.mp3.bin' },
-  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4',         audio: 'assets/rewind.m4a.bin' },
+  { code: '∆',  arrow: '',  title: 'Квант',          face: 5, video: 'assets/kvant.mp4', full: 'assets/kvant-full.mp4', audio: 'assets/kvant.mp3.bin' },
+  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4', full: 'assets/rewind-full.mp4', audio: 'assets/rewind.m4a.bin' },
   { code: '01', arrow: '→', title: 'Вы правы',       face: 1, video: 'assets/vy-pravy.mp4',       audio: 'assets/vy-pravy.mp3.bin' },
   { code: '10', arrow: '↓', title: 'Теневой опцион', face: 2, video: 'assets/tenevoy-option.mp4', audio: 'assets/tenevoy-option.mp3.bin' },
-  { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4',                        audio: 'assets/novaya-faza.mp3.bin' },
+  { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4', full: 'assets/novaya-faza-full.mp4', audio: 'assets/novaya-faza.mp3.bin' },
 ];
 const CONTENTS_FACE = 4;
 // the orientation that turns each face to the viewer, upright
@@ -606,6 +622,7 @@ function turn(dir) {
   applyTurn();
 }
 el.addEventListener('pointerdown', e => {
+  if (stageTo) return;                                  // the stage covers the cube
   dragging = true; start = { x: e.clientX, y: e.clientY, t: performance.now() }; base = cube.quaternion.clone();
   last = { x: e.clientX, y: e.clientY, t: performance.now() }; vel.set(0, 0); if (FREE) seeking = false;
   el.setPointerCapture(e.pointerId); unlockMedia();
@@ -652,6 +669,7 @@ for (const d of Object.keys(MAG_TRACK)) document.getElementById(d).onclick = () 
   unlockMedia();
   const tr = TRACKS.find(t => t.code === MAG_TRACK[d]);
   magnetFlash(d);
+  if (stageTo) { closeStage(); if (current === tr.face) return; }
   if (current === tr.face) toggle(); else goTo(tr.face);
 };
 
@@ -737,12 +755,14 @@ function toggle() {
   if (playingTrack === tr && audio.src) {
     if (audio.paused) audio.play().catch(() => {}); else audio.pause();
   } else {
+    if (tr.full || tr.video) enterFullscreen();          // inside the tap: the track opens fullscreen
     const turn = ++loadTurn;
     if (!audio.src) { audio.src = SILENT; audio.play().catch(() => {}); }   // unlock inside the tap
     $('hint').textContent = 'загрузка…';
     Promise.all([session, trackSrc(tr)]).then(([, src]) => {
       if (turn !== loadTurn) return;
       audio.src = src; playingTrack = tr; audio.play().catch(() => {});
+      openStage(tr);                                    // the long part, fullscreen
       if (current === tr.face) $('hint').textContent = '';
     }).catch(() => { if (turn === loadTurn) $('hint').textContent = 'нет доступа к треку'; });
   }
@@ -765,6 +785,99 @@ function seek(e) {
 }
 $('bar').addEventListener('pointerdown', e => { seek(e); $('bar').setPointerCapture(e.pointerId); });
 $('bar').addEventListener('pointermove', e => { if (e.buttons) seek(e); });
+
+// ------------------------------------------------------------------ stage: the long part, fullscreen
+const stageVideo = document.createElement('video');
+Object.assign(stageVideo, { muted: true, loop: true, playsInline: true, crossOrigin: 'use-credentials', preload: 'auto' });
+stageVideo.setAttribute('playsinline', '');
+const stageTex = new THREE.VideoTexture(stageVideo);       // raw colours: the shader writes them straight out
+const stageScene = new THREE.Scene(), stageCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const stageMat = new THREE.ShaderMaterial({
+  transparent: true, depthTest: false, depthWrite: false,
+  uniforms: { map: { value: stageTex }, p: { value: 0 }, t: { value: 0 }, aspect: { value: 1 }, ready: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }',
+  fragmentShader: `
+    varying vec2 vUv; uniform sampler2D map; uniform float p, t, aspect, ready;
+    float h(vec2 q){ return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+    float n(vec2 q){ vec2 i = floor(q), f = fract(q); f = f*f*(3.-2.*f);
+      return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
+    void main(){
+      vec2 sc = vec2((vUv.x - .5) * aspect, vUv.y - .5);              // screen space, 1 = screen height
+      float side = min(aspect, 1.) * .98;                               // the square video, as large as fits
+      vec2 vu = sc / side + .5;
+      vec3 bg = vec3(.02, .031, .043);
+      // the edges: the same video, scaled to cover the screen, blurred, darkened, with a cool tint
+      vec2 cu = sc / max(aspect, 1.) * .92 + .5;
+      vec3 amb = vec3(0.);
+      for (int i = 0; i < 12; i++) {
+        float ang = float(i) * 2.39996, r = .012 + .03 * fract(float(i) * .618);
+        amb += texture2D(map, cu + vec2(cos(ang), sin(ang)) * r).rgb;
+      }
+      amb = amb / 12. * .32 + vec3(0., .02, .03);
+      vec3 edge = mix(bg, amb, ready);
+      // the square, and a soft seam into its edges (the border pixels stretch out and fade into the blur)
+      vec3 vid = texture2D(map, clamp(vu, 0., 1.)).rgb * ready + bg * (1. - ready);
+      float outside = length(max(vec2(0.), abs(vu - .5) - .5));
+      vec3 col = mix(vid, edge, smoothstep(0., .05, outside));
+      // the phase front: from the centre (where the face is) outwards, ragged by noise
+      float field = length(sc) * .75 + (n(sc * 7. + 3.) * .6 + n(sc * 23.) * .4) * .35;
+      float front = p * 1.6 - .08;
+      float a = clamp((front - field) / .025, 0., 1.);
+      float rim = exp(-pow((field - front) / .018, 2.)) * step(.001, p) * step(p, .999);
+      gl_FragColor = vec4(col + rim * vec3(.35, .95, 1.) * 1.4, max(a, rim));
+    }`,
+});
+stageScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), stageMat));
+let stageP = 0, stageTo = 0, stageTrack = null;
+stageVideo.addEventListener('playing', () => { stageMat.uniforms.ready.value = 1; });
+function openStage(tr) {
+  if (!tr) return;
+  const name = (tr.full || tr.video || '').split('/').pop();
+  if (!name) return;
+  if (stageTrack !== tr) {
+    stageTrack = tr; stageMat.uniforms.ready.value = 0;
+    session.then(() => { stageVideo.src = QDIR[QUALITY] + name; stageVideo.play().catch(() => {}); });
+  } else stageVideo.play().catch(() => {});
+  stageTo = 1; document.body.classList.add('staged');
+}
+function closeStage() { stageTo = 0; document.body.classList.remove('staged'); leaveFullscreen(); }
+// real fullscreen hides the browser / Telegram chrome; it must be asked inside a tap
+function enterFullscreen() {
+  try {
+    if (tg && tg.isVersionAtLeast && tg.isVersionAtLeast('8.0') && tg.requestFullscreen) { if (!tg.isFullscreen) tg.requestFullscreen(); return; }
+    const el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+  } catch (e) {}
+}
+function leaveFullscreen() {
+  try {
+    if (tg && tg.isFullscreen && tg.exitFullscreen) { tg.exitFullscreen(); return; }
+    if (document.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {});
+  } catch (e) {}
+}
+const stageBtn = document.getElementById('stagebtn');
+stageBtn.onclick = () => { if (stageTo) closeStage(); else { enterFullscreen(); openStage(playingTrack); } };
+document.getElementById('stage-native').appendChild(stageVideo);    // the same element: texture for the dissolve, plain video when open
+const ambCtx = document.getElementById('stage-amb').getContext('2d');
+let ambNext = 0;
+audio.addEventListener('pause', () => stageVideo.pause());
+audio.addEventListener('play', () => { if (stageTrack === playingTrack && stageTo) stageVideo.play().catch(() => {}); });
+audio.addEventListener('ended', () => { closeStage(); });
+function stageFrame(dt) {
+  stageP += Math.sign(stageTo - stageP) * Math.min(Math.abs(stageTo - stageP), dt / 0.9);
+  if (!stageTo && stageP <= 0 && !stageVideo.paused) stageVideo.pause();
+  stageMat.uniforms.p.value = stageP;
+  stageMat.uniforms.aspect.value = camera.aspect;
+  document.body.classList.toggle('can-expand', !!(playingTrack && (playingTrack.full || playingTrack.video)));
+  const open = stageTo === 1 && stageP >= 1;
+  document.body.classList.toggle('native', open);
+  stageBtn.textContent = stageTo ? '⤡' : '⤢';
+  stageBtn.title = stageBtn.ariaLabel = stageTo ? 'Свернуть до грани' : 'Развернуть на весь экран';
+  if (open) {                                        // no WebGL while it is open: only the tiny blurred background
+    const now = performance.now();
+    if (now > ambNext && stageVideo.readyState >= 2) { ambNext = now + 120; try { ambCtx.drawImage(stageVideo, 0, 0, 32, 32); } catch (e) {} }
+  } else if (stageP > 0) { renderer.autoClear = false; renderer.render(stageScene, stageCam); renderer.autoClear = true; }
+}
 
 // ------------------------------------------------------------------ loop
 function resize() {
@@ -823,6 +936,7 @@ function updateDelta(dt) {
 document.getElementById('delta').addEventListener('click', () => {
   unlockMedia();
   const f = TRACKS.find(t => t.code === '∆').face;
+  if (stageTo) { closeStage(); if (current === f) return; }
   if (current === f) toggle(); else goTo(f);
 });
 
@@ -948,7 +1062,8 @@ function frame() {
   drawHeaderLogo(t);
   syncVideos(false);
   adapt(dt);
-  if (useBloom) composer.render(); else renderer.render(scene, camera);
+  if (stageP < 1) { if (useBloom) composer.render(); else renderer.render(scene, camera); }
+  stageFrame(dt);
   drawFx(t, pa);
   updateDelta(dt);
   cube.quaternion.copy(shown);
@@ -963,6 +1078,7 @@ function setQuality(q) {
   QUALITY = q; qBtn.textContent = QLABEL[q];
   PR = qPR(); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); resize();
   useBloom = q === 'high' || (q === 'mid' && !LITE);
+  if (stageTrack && stageVideo.src) { const was = !stageVideo.paused; stageVideo.src = QDIR[q] + (stageTrack.full || stageTrack.video).split('/').pop(); if (was) stageVideo.play().catch(() => {}); }
   for (const v of videos) if (v.src) { const was = !v.paused; v.src = QDIR[q] + v.dataset.name; if (was) v.play().catch(() => {}); }
 }
 qBtn.textContent = QLABEL[QUALITY];
