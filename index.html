@@ -110,6 +110,7 @@
   .time { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); flex-shrink: 0; }
   .bar { position: relative; height: 18px; cursor: pointer; touch-action: none; }
   .bar::before { content: ''; position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(255,255,255,.14); }
+  .load { position: absolute; left: 0; top: 8px; height: 2px; width: 0; background: rgba(232,252,255,.5); transition: width .2s; }
   .fill { position: absolute; left: 0; top: 8px; height: 2px; width: 0; background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
   .hint { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--dim); }
 
@@ -150,7 +151,7 @@
     <button id="kbtn" aria-label="Текст песни" title="Текст песни" aria-pressed="false">T</button>
     <button id="dl" aria-label="Скачать альбом на устройство" title="Скачать альбом на устройство">⤓</button>
     <div class="meta"><div class="title" id="title">Суккубить</div><div class="time" id="time"></div></div>
-    <div class="bar" id="bar"><div class="fill" id="fill"></div><div class="hint" id="hint"></div></div>
+    <div class="bar" id="bar"><div class="load" id="load"></div><div class="fill" id="fill"></div><div class="hint" id="hint"></div></div>
   </div>
 </footer>
 
@@ -240,27 +241,38 @@ function importKey(b64) {
 }
 // encrypted tracks are kept in the device's Cache Storage: downloaded once, then played offline
 const MEDIA_CACHE = 'sk-media-v1';
-async function cachedBin(url) {
-  try {
-    const c = await caches.open(MEDIA_CACHE);
-    const hit = await c.match(url);
-    if (hit) return hit.arrayBuffer();
-    const r = await fetch(url);
-    if (!r.ok) throw new Error(r.status);
-    await c.put(url, r.clone());
-    return r.arrayBuffer();
-  } catch (e) {
-    return fetch(url).then(r => r.arrayBuffer());       // no Cache Storage (old webview): plain download
+// a download with a byte counter: onBytes(loaded, total) as it arrives (total 0 if the server does not say)
+async function fetchBlob(url, onBytes, signal) {
+  const r = await fetch(url, { signal });
+  if (!r.ok) throw new Error(r.status);
+  const total = +r.headers.get('content-length') || 0, type = r.headers.get('content-type') || '';
+  if (!onBytes || !r.body || !r.body.getReader) return r.blob();
+  const reader = r.body.getReader(), parts = [];
+  let got = 0; onBytes(0, total);
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    parts.push(value); got += value.length; onBytes(got, total);
   }
+  return new Blob(parts, { type });
 }
+async function cachedBlob(cacheName, url, onBytes, signal) {
+  let c = null;
+  try { c = await caches.open(cacheName); const hit = await c.match(url); if (hit) return hit.blob(); }
+  catch (e) { c = null; }                                // no Cache Storage (old webview): plain download
+  const blob = await fetchBlob(url, onBytes, signal);
+  if (c) try { await c.put(url, new Response(blob)); } catch (e) {}   // full storage: it still plays, just not kept
+  return blob;
+}
+const cachedBin = (url, onBytes, signal) => cachedBlob(MEDIA_CACHE, url, onBytes, signal).then(b => b.arrayBuffer());
 async function isCached(url) {
   try { return !!(await (await caches.open(MEDIA_CACHE)).match(url)); } catch (e) { return false; }
 }
 const blobs = new Map();
-function trackSrc(tr) {
+function trackSrc(tr, onBytes, signal) {
   if (!ENCRYPTED) return Promise.resolve(tr.audio);
   if (!blobs.has(tr)) blobs.set(tr, (async () => {
-    const [key, buf] = await Promise.all([mediaKey(), cachedBin(tr.audio)]);
+    const [key, buf] = await Promise.all([mediaKey(), cachedBin(tr.audio, onBytes, signal)]);
     const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: buf.slice(0, 12) }, key, buf.slice(12));
     return URL.createObjectURL(new Blob([plain], { type: tr.audio.includes('.m4a') ? 'audio/mp4' : 'audio/mpeg' }));
   })().catch(e => { blobs.delete(tr); throw e; }));
@@ -767,23 +779,49 @@ function showFace(f) {
   }
   syncUI();
 }
-let loadTurn = 0;
+let loadTurn = 0, loadAbort = null, loadingTrack = null;
+// one bar for all the downloads of a tap: the bytes so far over the bytes announced
+function meter(alive, faceOf) {
+  const parts = {};
+  return key => (got, total) => {
+    if (!alive()) return;
+    parts[key] = [got, total];
+    let g = 0, t = 0;
+    for (const [a, b] of Object.values(parts)) { g += a; t += b || a; }
+    const pct = t ? Math.min(99, Math.floor(g / t * 100)) : 0;
+    $('load').style.width = pct + '%';
+    if (current === faceOf) $('hint').textContent = `загрузка ${pct}%`;
+  };
+}
+function meterDone() { $('load').style.width = '0'; }
 function toggle() {
   const tr = trackOnFace(current);
   if (!tr || !tr.audio) return;
   if (playingTrack === tr && audio.src) {
     if (audio.paused) audio.play().catch(() => {}); else audio.pause();
   } else {
+    if (loadingTrack === tr) return;                     // still downloading: a second tap does not start it over
     if (tr.full || tr.video) enterFullscreen();          // inside the tap: the track opens fullscreen
     const turn = ++loadTurn;
+    if (loadAbort) loadAbort.abort();                    // the previous track's downloads give way
+    const ab = loadAbort = new AbortController(); loadingTrack = tr;
     if (!audio.src) { audio.src = SILENT; audio.play().catch(() => {}); }   // unlock inside the tap
     $('hint').textContent = 'загрузка…';
-    Promise.all([session, trackSrc(tr)]).then(([, src]) => {
+    // as in Telegram: the track and its clip come whole first, then play without stalls
+    const m = meter(() => turn === loadTurn, tr.face);
+    const clip = (tr.full || tr.video)
+      ? session.then(() => stageSrc(tr, QUALITY, m('v'), ab.signal)).catch(e => { if (ab.signal.aborted) throw e; return null; })
+      : null;
+    Promise.all([session, trackSrc(tr, m('a'), ab.signal), clip]).then(([, src, vsrc]) => {
       if (turn !== loadTurn) return;
+      loadingTrack = null; meterDone();
       audio.src = src; playingTrack = tr; audio.play().catch(() => {}); loadLyrics(tr);
-      openStage(tr);                                    // the long part, fullscreen
+      openStage(tr, vsrc);                              // the long part, fullscreen
       if (current === tr.face) $('hint').textContent = '';
-    }).catch(() => { if (turn === loadTurn) $('hint').textContent = 'нет доступа к треку'; });
+    }).catch(() => {
+      if (turn !== loadTurn) return;
+      loadingTrack = null; meterDone(); $('hint').textContent = 'нет доступа к треку';
+    });
   }
   if (tg && tg.HapticFeedback) try { tg.HapticFeedback.impactOccurred('light'); } catch (e) {}
 }
@@ -849,17 +887,40 @@ const stageMat = new THREE.ShaderMaterial({
 });
 stageScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), stageMat));
 let stageP = 0, stageTo = 0, stageTrack = null;
+// the clip is kept on the device whole, one quality per clip (a new quality replaces the old one)
+const VIDEO_CACHE = 'sk-video-v1';
+const stageBlobs = new Map();                           // url -> Promise<blob url>
+const clipName = tr => (tr.full || tr.video || '').split('/').pop();
+function stageSrc(tr, q, onBytes, signal) {
+  const name = clipName(tr), url = QDIR[q] + name;
+  if (!stageBlobs.has(url)) stageBlobs.set(url, (async () => {
+    try {                                                // other qualities of this clip leave the device
+      const c = await caches.open(VIDEO_CACHE);
+      for (const k of await c.keys()) if (k.url.endsWith('/' + name) && !k.url.endsWith('/' + url)) await c.delete(k);
+    } catch (e) {}
+    return URL.createObjectURL(await cachedBlob(VIDEO_CACHE, url, onBytes, signal));
+  })().catch(e => { stageBlobs.delete(url); throw e; }));
+  return stageBlobs.get(url);
+}
+function dropStageBlobs(tr, keepUrl) {                  // the other qualities of the clip, out of memory
+  const name = clipName(tr);
+  for (const [k, p] of stageBlobs) if (k !== keepUrl && k.endsWith('/' + name)) { stageBlobs.delete(k); p.then(u => URL.revokeObjectURL(u), () => {}); }
+}
 stageVideo.addEventListener('playing', () => { stageMat.uniforms.ready.value = 1; });
-function openStage(tr) {
+function openStage(tr, src) {
   if (!tr) return;
-  const name = (tr.full || tr.video || '').split('/').pop();
+  const name = clipName(tr);
   if (!name) return;
   if (stageTrack !== tr) {
     stageTrack = tr; stageMat.uniforms.ready.value = 0;
     stageVideo.loop = !tr.sync;
     stageMat.uniforms.va.value = tr.wide ? 16 / 9 : 1;
     document.body.classList.toggle('wide', !!tr.wide);
-    session.then(() => { stageVideo.src = QDIR[QUALITY] + name; syncStage(true); if (!audio.paused || !tr.sync) stageVideo.play().catch(() => {}); });
+    const url = QDIR[QUALITY] + name;                  // the download failed: stream it as before
+    session.then(() => src || stageSrc(tr, QUALITY).catch(() => url)).then(s => {
+      if (stageTrack !== tr) return;
+      stageVideo.src = s; syncStage(true); if (!audio.paused || !tr.sync) stageVideo.play().catch(() => {});
+    });
   } else stageVideo.play().catch(() => {});
   stageTo = 1; document.body.classList.add('staged');
 }
@@ -1169,7 +1230,17 @@ function setQuality(q) {
   QUALITY = q; qBtn.textContent = QLABEL[q];
   PR = qPR(); renderer.setPixelRatio(PR); composer.setPixelRatio(PR); resize();
   useBloom = q === 'high' || (q === 'mid' && !LITE);
-  if (stageTrack && stageVideo.src) { const was = !stageVideo.paused; stageVideo.src = QDIR[q] + (stageTrack.full || stageTrack.video).split('/').pop(); if (was) stageVideo.play().catch(() => {}); }
+  if (stageTrack && stageVideo.src) {
+    const tr = stageTrack, alive = () => QUALITY === q && stageTrack === tr;
+    stageSrc(tr, q, meter(alive, tr.face)('v')).then(s => {
+      if (!alive()) return;
+      meterDone(); if (current === tr.face) $('hint').textContent = '';
+      const was = !stageVideo.paused, t = stageVideo.currentTime;
+      stageVideo.src = s; try { stageVideo.currentTime = t; } catch (e) {}
+      syncStage(true); if (was) stageVideo.play().catch(() => {});
+      dropStageBlobs(tr, QDIR[q] + clipName(tr));
+    }, () => { if (alive()) meterDone(); });
+  }
   for (const v of videos) if (v.src) { const was = !v.paused; v.src = QDIR[q] + v.dataset.name; if (was) v.play().catch(() => {}); }
 }
 qBtn.textContent = QLABEL[QUALITY];
