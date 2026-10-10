@@ -94,6 +94,7 @@
 
   footer { position: fixed; left: calc(10px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); pointer-events: none;
     width: min(340px, calc(100vw - 160px)); }   /* the player sits in the bottom-left corner */
+  @media (orientation: landscape) and (max-height: 500px) { footer { width: min(300px, calc(50vw - 60px)); } }
   @media (orientation: portrait) { footer { right: calc(10px + env(safe-area-inset-right)); width: auto; } }   /* phones: full width, so the title fits */
   .player { pointer-events: auto; width: 100%; background: var(--panel); border: 1px solid var(--line);
     border-radius: 18px; padding: 12px 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -201,6 +202,8 @@ const inviteKey = new URLSearchParams(location.search).get('k');
 // CDN mode (the build for GitHub Pages sets ENCRYPTED = true): videos are public, tracks are AES-GCM encrypted
 // .bin files; the key comes from the home server (the tunnel) for a Telegram user or an invite link.
 const ENCRYPTED = true;
+// media fingerprints, path -> content hash (build_cdn.py fills them in): a changed file downloads once more, the rest stay
+const MEDIA_VER = {"assets/hd/kvant-full.mp4": "06d7262c7c", "assets/hd/kvant.mp4": "d8c7347738", "assets/hd/novaya-faza-full.mp4": "43152e6a55", "assets/hd/novaya-faza.mp4": "cccb5455da", "assets/hd/rewind-clip.mp4": "a638eb3eb5", "assets/hd/rewind-full.mp4": "bb1a6aa707", "assets/hd/rewind.mp4": "2ac2702f0e", "assets/hd/tenevoy-option.mp4": "67233bf29b", "assets/hd/vy-pravy.mp4": "c29dacd9b1", "assets/kvant-full.mp4": "1dbc031c35", "assets/kvant.mp3.bin": "98993d12fd", "assets/kvant.mp4": "1c5067ab96", "assets/m/kvant-full.mp4": "c29ccb61de", "assets/m/kvant.mp4": "a5e8d1668d", "assets/m/novaya-faza-full.mp4": "443647dc5a", "assets/m/novaya-faza.mp4": "a3267fa587", "assets/m/rewind-clip.mp4": "0f09905e9e", "assets/m/rewind-full.mp4": "e2a2cd8228", "assets/m/rewind.mp4": "55c4e13b3d", "assets/m/tenevoy-option.mp4": "7a0b11f68b", "assets/m/vy-pravy.mp4": "278be9f19a", "assets/novaya-faza-full.mp4": "64f22096d3", "assets/novaya-faza.mp3.bin": "76f46ca9b8", "assets/novaya-faza.mp4": "782b070e48", "assets/rewind-clip.mp4": "053d2a27e5", "assets/rewind-full.mp4": "ada9be3876", "assets/rewind.m4a.bin": "052c9da890", "assets/rewind.mp4": "5c1cfe6b5b", "assets/tenevoy-option.mp3.bin": "03f3e50eba", "assets/tenevoy-option.mp4": "b9abcde988", "assets/vy-pravy.mp3.bin": "0ef02c83f8", "assets/vy-pravy.mp4": "9633bbc5ca"};
 const session = ENCRYPTED ? Promise.resolve() : (tg && tg.initData)
   ? fetch('api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData: tg.initData }), credentials: 'same-origin' }).catch(() => {})
@@ -256,17 +259,47 @@ async function fetchBlob(url, onBytes, signal) {
   }
   return new Blob(parts, { type });
 }
+const versioned = url => MEDIA_VER[url] ? url + '?v=' + MEDIA_VER[url] : url;
+const pathOf = u => new URL(u, location.href).pathname;
+let persistAsked = false;
+function askPersist() {                                  // the browser should not clear what was downloaded
+  if (persistAsked) return; persistAsked = true;
+  try { navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(() => {}); } catch (e) {}
+}
+// downloaded once: kept under the file's fingerprint; an older version of the same file is dropped
 async function cachedBlob(cacheName, url, onBytes, signal) {
+  const key = versioned(url);
   let c = null;
-  try { c = await caches.open(cacheName); const hit = await c.match(url); if (hit) return hit.blob(); }
+  try { c = await caches.open(cacheName); const hit = await c.match(key); if (hit) return hit.blob(); }
   catch (e) { c = null; }                                // no Cache Storage (old webview): plain download
-  const blob = await fetchBlob(url, onBytes, signal);
-  if (c) try { await c.put(url, new Response(blob)); } catch (e) {}   // full storage: it still plays, just not kept
+  const blob = await fetchBlob(key, onBytes, signal);
+  if (c) try {
+    const path = pathOf(url);
+    for (const k of await c.keys()) if (pathOf(k.url) === path) await c.delete(k);
+    await c.put(key, new Response(blob)); askPersist();
+  } catch (e) {}                                         // full storage: it still plays, just not kept
   return blob;
 }
 const cachedBin = (url, onBytes, signal) => cachedBlob(MEDIA_CACHE, url, onBytes, signal).then(b => b.arrayBuffer());
 async function isCached(url) {
-  try { return !!(await (await caches.open(MEDIA_CACHE)).match(url)); } catch (e) { return false; }
+  try { return !!(await (await caches.open(MEDIA_CACHE)).match(versioned(url))); } catch (e) { return false; }
+}
+// videos (the face loops and the clips) are kept whole on the device, one quality per file
+const VIDEO_CACHE = 'sk-video-v1';
+const videoBlobs = new Map();                           // url -> Promise<blob url>
+function videoSrc(name, q, onBytes, signal) {
+  const url = QDIR[q] + name;
+  if (!videoBlobs.has(url)) videoBlobs.set(url, (async () => {
+    try {                                                // the other qualities of this file leave the device
+      const c = await caches.open(VIDEO_CACHE), mine = pathOf(url);
+      for (const k of await c.keys()) { const kp = pathOf(k.url); if (kp.endsWith('/' + name) && kp !== mine) await c.delete(k); }
+    } catch (e) {}
+    return URL.createObjectURL(await cachedBlob(VIDEO_CACHE, url, onBytes, signal));
+  })().catch(e => { videoBlobs.delete(url); throw e; }));
+  return videoBlobs.get(url);
+}
+function dropVideoBlobs(name, keepUrl) {                // the other qualities of the file, out of memory
+  for (const [k, p] of videoBlobs) if (k !== keepUrl && k.endsWith('/' + name)) { videoBlobs.delete(k); p.then(u => URL.revokeObjectURL(u), () => {}); }
 }
 const blobs = new Map();
 function trackSrc(tr, onBytes, signal) {
@@ -732,7 +765,7 @@ function tap(e) {
     const i = Math.floor((y - ROW_Y0 + ROW_H / 2) / ROW_H);
     if (i >= 0 && i < TRACKS.length) goTo(TRACKS[i].face);
   } else if (face === current) {
-    toggle();
+    unlockMedia(); expand(trackOnFace(face));
   } else goTo(face);
 }
 const audio = new Audio(); audio.preload = 'none'; window.__sukkubit.audio = audio;
@@ -747,10 +780,13 @@ function syncVideos(force) {
   for (const v of videos) {
     const f = +v.dataset.face, z = NORMALS[f].clone().applyQuaternion(cube.quaternion).z;
     const want = z > 0.2 || f === target_;          // side faces seen edge-on (z ≈ 0) stay paused
-    if (want && !v.src && v.dataset.ready && (!LITE || f === target_)) {   // phones: only the face being opened
+    if (want && !v.src && !v.dataset.loading && v.dataset.ready && (!LITE || f === target_)) {   // phones: only the face being opened
       // lazy: the video is fetched the first time its face is wanted; on a phone not while a track is still buffering
       if (LITE && !audio.paused && audio.readyState < 3) continue;
-      v.src = QDIR[QUALITY] + v.dataset.name;
+      const q = QUALITY, name = v.dataset.name;
+      v.dataset.loading = '1';
+      videoSrc(name, q).catch(() => QDIR[q] + name)      // the download failed: it streams
+        .then(s => { delete v.dataset.loading; if (!v.src) v.src = s; syncVideos(true); });
     }
     if (want && v.src && v.paused) v.play().catch(() => {});
     else if (!want && !v.paused) v.pause();
@@ -767,6 +803,7 @@ function fmt(s) { if (!isFinite(s)) return '0:00'; const m = Math.floor(s / 60);
 
 function showFace(f) {
   current = f;
+  if (pendingStage && pendingStage.face !== f) pendingStage = null;
   const tr = trackOnFace(f);
   if (!tr) {
     $('title').textContent = 'Суккубить';
@@ -779,51 +816,62 @@ function showFace(f) {
   }
   syncUI();
 }
-let loadTurn = 0, loadAbort = null, loadingTrack = null;
-// one bar for all the downloads of a tap: the bytes so far over the bytes announced
-function meter(alive, faceOf) {
-  const parts = {};
-  return key => (got, total) => {
+let loadTurn = 0, loadAbort = null, loadingTrack = null, pendingStage = null;
+// a download's progress in the player: the light bar under the play bar and «загрузка 45%» / «видео 45%»
+function meter(alive, tr, label) {
+  return (got, total) => {
     if (!alive()) return;
-    parts[key] = [got, total];
-    let g = 0, t = 0;
-    for (const [a, b] of Object.values(parts)) { g += a; t += b || a; }
-    const pct = t ? Math.min(99, Math.floor(g / t * 100)) : 0;
-    $('load').style.width = pct + '%';
-    if (current === faceOf) $('hint').textContent = `загрузка ${pct}%`;
+    const pct = total ? Math.min(99, Math.floor(got / total * 100)) : 0, mine = current === tr.face;
+    $('load').style.width = mine ? pct + '%' : '0';
+    if (mine) $('hint').textContent = `${label} ${pct}%`;
   };
 }
-function meterDone() { $('load').style.width = '0'; }
+function meterDone(tr) {
+  $('load').style.width = '0';
+  if (tr && current === tr.face && /%$/.test($('hint').textContent)) $('hint').textContent = '';
+}
+// Play: the track only. It starts as soon as it has downloaded; its clip follows in the background
 function toggle() {
   const tr = trackOnFace(current);
   if (!tr || !tr.audio) return;
   if (playingTrack === tr && audio.src) {
     if (audio.paused) audio.play().catch(() => {}); else audio.pause();
-  } else {
-    if (loadingTrack === tr) return;                     // still downloading: a second tap does not start it over
-    if (tr.full || tr.video) enterFullscreen();          // inside the tap: the track opens fullscreen
-    const turn = ++loadTurn;
-    if (loadAbort) loadAbort.abort();                    // the previous track's downloads give way
-    const ab = loadAbort = new AbortController(); loadingTrack = tr;
-    if (!audio.src) { audio.src = SILENT; audio.play().catch(() => {}); }   // unlock inside the tap
-    $('hint').textContent = 'загрузка…';
-    // as in Telegram: the track and its clip come whole first, then play without stalls
-    const m = meter(() => turn === loadTurn, tr.face);
-    const clip = (tr.full || tr.video)
-      ? session.then(() => stageSrc(tr, QUALITY, m('v'), ab.signal)).catch(e => { if (ab.signal.aborted) throw e; return null; })
-      : null;
-    Promise.all([session, trackSrc(tr, m('a'), ab.signal), clip]).then(([, src, vsrc]) => {
-      if (turn !== loadTurn) return;
-      loadingTrack = null; meterDone();
-      audio.src = src; playingTrack = tr; audio.play().catch(() => {}); loadLyrics(tr);
-      openStage(tr, vsrc);                              // the long part, fullscreen
-      if (current === tr.face) $('hint').textContent = '';
-    }).catch(() => {
-      if (turn !== loadTurn) return;
-      loadingTrack = null; meterDone(); $('hint').textContent = 'нет доступа к треку';
-    });
-  }
+  } else startTrack(tr);
   if (tg && tg.HapticFeedback) try { tg.HapticFeedback.impactOccurred('light'); } catch (e) {}
+}
+function startTrack(tr) {
+  if (loadingTrack === tr) return;                       // still downloading: a second tap does not start it over
+  const turn = ++loadTurn;
+  if (loadAbort) loadAbort.abort();                      // the previous track's downloads give way
+  const ab = loadAbort = new AbortController(); loadingTrack = tr;
+  if (pendingStage !== tr) pendingStage = null;
+  if (!audio.src) { audio.src = SILENT; audio.play().catch(() => {}); }   // unlock inside the tap
+  $('hint').textContent = 'загрузка…';
+  const alive = () => turn === loadTurn;
+  Promise.all([session, trackSrc(tr, meter(alive, tr, 'загрузка'), ab.signal)]).then(([, src]) => {
+    if (!alive()) return;
+    loadingTrack = null; meterDone(tr);
+    audio.src = src; playingTrack = tr; audio.play().catch(() => {}); loadLyrics(tr);
+    if (current === tr.face) $('hint').textContent = '';
+    // as in Telegram: the clip comes whole, then plays without stalls; the cover opens it (expand)
+    if (tr.full || tr.video) stageSrc(tr, QUALITY, meter(alive, tr, 'видео'), ab.signal).then(() => { if (alive()) meterDone(tr); }, () => { if (alive()) meterDone(tr); });
+  }).catch(() => {
+    if (!alive()) return;
+    loadingTrack = null; meterDone(); $('hint').textContent = 'нет доступа к треку';
+  });
+}
+// the cover (and ⤢): the clip fullscreen. Not downloaded yet: the cube stays, the clip opens itself once it is here
+function expand(tr) {
+  if (!tr) return;
+  if (!(tr.full || tr.video)) return toggle();
+  enterFullscreen();                                     // inside the tap
+  if (playingTrack !== tr) startTrack(tr);
+  pendingStage = tr;
+  const sig = loadAbort && (loadingTrack === tr || playingTrack === tr) ? loadAbort.signal : undefined;
+  session.then(() => stageSrc(tr, QUALITY, meter(() => pendingStage === tr, tr, 'видео'), sig)).then(s => {
+    if (pendingStage !== tr) return;
+    pendingStage = null; meterDone(tr); openStage(tr, s);
+  }, () => { if (pendingStage === tr) { pendingStage = null; meterDone(tr); openStage(tr); } });   // failed: it streams
 }
 function syncUI() {
   const tr = trackOnFace(current);
@@ -887,26 +935,8 @@ const stageMat = new THREE.ShaderMaterial({
 });
 stageScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), stageMat));
 let stageP = 0, stageTo = 0, stageTrack = null;
-// the clip is kept on the device whole, one quality per clip (a new quality replaces the old one)
-const VIDEO_CACHE = 'sk-video-v1';
-const stageBlobs = new Map();                           // url -> Promise<blob url>
 const clipName = tr => (tr.full || tr.video || '').split('/').pop();
-function stageSrc(tr, q, onBytes, signal) {
-  const name = clipName(tr), url = QDIR[q] + name;
-  if (!stageBlobs.has(url)) stageBlobs.set(url, (async () => {
-    try {                                                // other qualities of this clip leave the device
-      const c = await caches.open(VIDEO_CACHE);
-      for (const k of await c.keys()) if (k.url.endsWith('/' + name) && !k.url.endsWith('/' + url)) await c.delete(k);
-    } catch (e) {}
-    return URL.createObjectURL(await cachedBlob(VIDEO_CACHE, url, onBytes, signal));
-  })().catch(e => { stageBlobs.delete(url); throw e; }));
-  return stageBlobs.get(url);
-}
-function dropStageBlobs(tr, keepUrl) {                  // the other qualities of the clip, out of memory
-  const name = clipName(tr);
-  for (const [k, p] of stageBlobs) if (k !== keepUrl && k.endsWith('/' + name)) { stageBlobs.delete(k); p.then(u => URL.revokeObjectURL(u), () => {}); }
-}
-stageVideo.addEventListener('playing', () => { stageMat.uniforms.ready.value = 1; });
+const stageSrc = (tr, q, onBytes, signal) => videoSrc(clipName(tr), q, onBytes, signal);
 function openStage(tr, src) {
   if (!tr) return;
   const name = clipName(tr);
@@ -989,7 +1019,7 @@ function syncStage(force) {
   if (force || Math.abs(stageVideo.currentTime - audio.currentTime) > 0.25) { try { stageVideo.currentTime = audio.currentTime; } catch (e) {} }
 }
 audio.addEventListener('seeked', () => syncStage(true));
-function closeStage() { stageTo = 0; document.body.classList.remove('staged'); leaveFullscreen(); }
+function closeStage() { pendingStage = null; stageTo = 0; document.body.classList.remove('staged'); leaveFullscreen(); }
 // real fullscreen hides the browser / Telegram chrome; it must be asked inside a tap
 function enterFullscreen() {
   try {
@@ -1005,7 +1035,7 @@ function leaveFullscreen() {
   } catch (e) {}
 }
 const stageBtn = document.getElementById('stagebtn');
-stageBtn.onclick = () => { if (stageTo) closeStage(); else { enterFullscreen(); openStage(playingTrack); } };
+stageBtn.onclick = () => { if (stageTo) closeStage(); else expand(playingTrack); };
 document.getElementById('stage-native').appendChild(stageVideo);    // the same element: texture for the dissolve, plain video when open
 const ambCtx = document.getElementById('stage-amb').getContext('2d');
 let ambNext = 0;
@@ -1037,7 +1067,10 @@ function resize() {
   renderer.setSize(w, h); composer.setSize(w, h); bloom.setSize(w * 0.5, h * 0.5);   // bloom at half resolution: it is a blur anyway
   camera.aspect = w / h;
   // keep the cube comfortably inside narrow (phone) screens
-  camera.position.z = Math.max(6.6, 1.8 / (Math.tan(THREE.MathUtils.degToRad(18)) * camera.aspect));  // room for the magnets on a phone
+  const t18 = Math.tan(THREE.MathUtils.degToRad(18));
+  camera.position.z = Math.max(6.6, 1.8 / (t18 * camera.aspect));  // room for the magnets on a phone
+  // a phone on its side: low screen, so the cube steps back until the up/down magnets clear it
+  if (!desktop(w, h)) camera.position.z = Math.max(camera.position.z, 1.55 * (h / 2) / (t18 * (h / 2 - 1.1 * magSize(w, h))));
   camera.updateProjectionMatrix();
   const fx = document.getElementById('fx'), dpr = Math.min(window.devicePixelRatio || 1, 2);
   fx.width = w * dpr; fx.height = h * dpr; fx.style.width = w + 'px'; fx.style.height = h + 'px';
@@ -1046,13 +1079,16 @@ function resize() {
 // the four magnets sit on a circle around the cube centre (the screen centre), at the same distance R
 const MAG_V = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };   // screen directions
 let PX_PER_UNIT = 1, CUBE_HALF = 100, MAG_R = 150;
+// a desktop by the shorter side: a phone on its side is wide, but still a phone
+const desktop = (w, h) => Math.min(w, h) >= 600;
+const magSize = (w, h) => desktop(w, h) ? 96 : 60;            // bigger magnets on a desktop
 function layoutMagnets() {
   const w = host.clientWidth, h = host.clientHeight;
   PX_PER_UNIT = (h / 2) / (camera.position.z * Math.tan(THREE.MathUtils.degToRad(18)));
   CUBE_HALF = PX_PER_UNIT * 1.0;                                // the cube is 2 units wide
-  const MAG = w >= 700 ? 96 : 60;                               // bigger magnets on a desktop
+  const MAG = magSize(w, h);
   document.documentElement.style.setProperty('--mag', MAG + 'px');
-  const roomy = w >= 700;                                       // desktop: out towards the window edges
+  const roomy = desktop(w, h);                                  // desktop: out towards the window edges
   MAG_R = Math.min(w / 2 - MAG * 0.6, h / 2 - MAG * 0.6, roomy ? Infinity : CUBE_HALF + 100);
   for (const [d, [vx, vy]] of Object.entries(MAG_V)) {
     const m = document.getElementById(d);
@@ -1068,7 +1104,7 @@ function deltaBounce() { deltaEl.classList.add('hit'); clearTimeout(D.tm); D.tm 
 function updateDelta(dt) {
   const w = host.clientWidth, h = host.clientHeight;
   if (!D.init) { D.x = w * 0.82; D.y = h * 0.78; D.init = true; }
-  D.r = (w >= 700 ? 96 : 60) / 2;                             // the same size as the magnets
+  D.r = magSize(w, h) / 2;                                    // the same size as the magnets
   D.x += D.vx * dt; D.y += D.vy * dt; D.spin += (D.vx > 0 ? 1 : -1) * dt * 40;
   if (D.x < D.r) { D.x = D.r; D.vx = Math.abs(D.vx); deltaBounce(); }
   if (D.x > w - D.r) { D.x = w - D.r; D.vx = -Math.abs(D.vx); deltaBounce(); }
@@ -1232,16 +1268,25 @@ function setQuality(q) {
   useBloom = q === 'high' || (q === 'mid' && !LITE);
   if (stageTrack && stageVideo.src) {
     const tr = stageTrack, alive = () => QUALITY === q && stageTrack === tr;
-    stageSrc(tr, q, meter(alive, tr.face)('v')).then(s => {
+    stageSrc(tr, q, meter(alive, tr, 'видео')).then(s => {
       if (!alive()) return;
-      meterDone(); if (current === tr.face) $('hint').textContent = '';
+      meterDone(tr);
       const was = !stageVideo.paused, t = stageVideo.currentTime;
       stageVideo.src = s; try { stageVideo.currentTime = t; } catch (e) {}
       syncStage(true); if (was) stageVideo.play().catch(() => {});
-      dropStageBlobs(tr, QDIR[q] + clipName(tr));
-    }, () => { if (alive()) meterDone(); });
+      dropVideoBlobs(clipName(tr), QDIR[q] + clipName(tr));
+    }, () => { if (alive()) meterDone(tr); });
   }
-  for (const v of videos) if (v.src) { const was = !v.paused; v.src = QDIR[q] + v.dataset.name; if (was) v.play().catch(() => {}); }
+  for (const v of videos) if (v.src) {                  // the new quality downloads, the old one plays meanwhile
+    const name = v.dataset.name;
+    videoSrc(name, q).then(s => {
+      if (QUALITY !== q) return;
+      const was = !v.paused, t = v.currentTime;
+      v.src = s; try { v.currentTime = t; } catch (e) {}
+      if (was) v.play().catch(() => {});
+      dropVideoBlobs(name, QDIR[q] + name);
+    }, () => {});
+  }
 }
 qBtn.textContent = QLABEL[QUALITY];
 qBtn.onclick = () => {
