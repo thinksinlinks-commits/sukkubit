@@ -52,6 +52,16 @@
   .logo { position: fixed; z-index: 4; pointer-events: auto; cursor: pointer; }   /* a tap brings the cube back to the contents */
   #logo { left: calc(6px + env(safe-area-inset-left)); top: calc(6px + env(safe-area-inset-top)); }
   /* ∆ in the bottom-right corner: straight to «Квант», the face opposite the contents */
+  /* karaoke: over the open stage, the current line fills word by word */
+  #karaoke { position: fixed; left: 0; right: 0; bottom: calc(96px + env(safe-area-inset-bottom)); z-index: 6; text-align: center;
+    pointer-events: none; padding: 0 16px; opacity: 0; transition: opacity .4s; }
+  body.staged.has-lyrics #karaoke { opacity: 1; }
+  .k-line { font: 500 clamp(22px, 3.4vw, 44px)/1.2 'Cormorant Garamond', serif; color: rgba(232,252,255,.38);
+    text-shadow: 0 2px 12px rgba(0,0,0,.9), 0 0 2px #000; min-height: 1.2em; }
+  .k-line.next { font-size: clamp(15px, 2vw, 24px); margin-top: 4px; color: rgba(232,252,255,.32); }
+  .k-w { background: linear-gradient(90deg, #e8fcff var(--p, 0%), rgba(232,252,255,.38) var(--p, 0%));
+    -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .k-w.sung { color: #e8fcff; background: none; text-shadow: 0 0 14px rgba(0,229,255,.55), 0 2px 12px rgba(0,0,0,.9); }
   #stagebtn { position: absolute; right: 10px; top: 8px; width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--line);
     background: none; color: var(--cyan); cursor: pointer; display: none; place-items: center; padding: 0; font: 15px/1 sans-serif; }
   body.can-expand #stagebtn { display: grid; }
@@ -122,6 +132,7 @@
 <button class="nav magnet" id="right" aria-label="Магнит справа"><img src="assets/mag-right.png" alt="" draggable="false"></button>
 <button class="nav magnet" id="up" aria-label="Магнит сверху"><img src="assets/mag-up.png" alt="" draggable="false"></button>
 <button class="nav magnet" id="down" aria-label="Магнит снизу"><img src="assets/mag-down.png" alt="" draggable="false"></button>
+<div id="karaoke" aria-live="off"><div class="k-line" id="k-cur"></div><div class="k-line next" id="k-next"></div></div>
 <div id="stage-native"><canvas id="stage-amb" width="32" height="32"></canvas></div>
 <footer>
   <div class="player">
@@ -154,7 +165,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // Квант (∆) is opposite the contents: two turns away. The binary codes 00/01/10/11 sit on the four neighbours.
 const TRACKS = [
   { code: '∆',  arrow: '',  title: 'Квант',          face: 5, video: 'assets/kvant.mp4', full: 'assets/kvant-full.mp4', audio: 'assets/kvant.mp3.bin' },
-  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4', full: 'assets/rewind-clip.mp4', sync: true, wide: true, audio: 'assets/rewind.m4a.bin' },
+  { code: '00', arrow: '←', title: 'Rewind',         face: 0, video: 'assets/rewind.mp4', full: 'assets/rewind-clip.mp4', sync: true, wide: true, lyrics: 'assets/rewind-lyrics.json', audio: 'assets/rewind.m4a.bin' },
   { code: '01', arrow: '→', title: 'Вы правы',       face: 1, video: 'assets/vy-pravy.mp4',       audio: 'assets/vy-pravy.mp3.bin' },
   { code: '10', arrow: '↓', title: 'Теневой опцион', face: 2, video: 'assets/tenevoy-option.mp4', audio: 'assets/tenevoy-option.mp3.bin' },
   { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4', full: 'assets/novaya-faza-full.mp4', audio: 'assets/novaya-faza.mp3.bin' },
@@ -704,7 +715,7 @@ function tap(e) {
     toggle();
   } else goTo(face);
 }
-const audio = new Audio(); audio.preload = 'none';
+const audio = new Audio(); audio.preload = 'none'; window.__sukkubit.audio = audio;
 let unlocked = false;
 function unlockMedia() { if (unlocked) return; unlocked = true; syncVideos(true); }
 // only the faces turned towards the viewer (or about to be) decode their video; the rest are paused
@@ -761,7 +772,7 @@ function toggle() {
     $('hint').textContent = 'загрузка…';
     Promise.all([session, trackSrc(tr)]).then(([, src]) => {
       if (turn !== loadTurn) return;
-      audio.src = src; playingTrack = tr; audio.play().catch(() => {});
+      audio.src = src; playingTrack = tr; audio.play().catch(() => {}); loadLyrics(tr);
       openStage(tr);                                    // the long part, fullscreen
       if (current === tr.face) $('hint').textContent = '';
     }).catch(() => { if (turn === loadTurn) $('hint').textContent = 'нет доступа к треку'; });
@@ -844,6 +855,41 @@ function openStage(tr) {
   } else stageVideo.play().catch(() => {});
   stageTo = 1; document.body.classList.add('staged');
 }
+// ---------------- karaoke
+const lyricsCache = new Map();
+let kLines = null, kIdx = -2;
+function loadLyrics(tr) {
+  kLines = null; kIdx = -2;
+  document.body.classList.toggle('has-lyrics', !!(tr && tr.lyrics));
+  if (!tr || !tr.lyrics) return;
+  if (!lyricsCache.has(tr)) lyricsCache.set(tr, fetch(tr.lyrics).then(r => r.json()).catch(() => null));
+  lyricsCache.get(tr).then(l => { if (playingTrack === tr) kLines = l; });
+}
+const kCur = document.getElementById('k-cur'), kNext = document.getElementById('k-next');
+function renderLine(el, line) {
+  el.innerHTML = '';
+  if (!line) return;
+  line.w.forEach(([a, b, w], i) => {
+    const sp = document.createElement('span'); sp.className = 'k-w'; sp.textContent = w;
+    sp.dataset.a = a; sp.dataset.b = b; el.appendChild(sp);
+    if (i < line.w.length - 1) el.appendChild(document.createTextNode(' '));
+  });
+}
+function karaoke() {
+  if (!kLines || !stageTo) return;
+  const t = audio.currentTime;
+  let i = kLines.findIndex(l => t < l.t1 + 0.6);
+  if (i >= 0 && t < kLines[i].t0 - 1.2) i = i - 1 >= 0 && t < kLines[i - 1].t1 + 1.5 ? i - 1 : (t < kLines[i].t0 - 2.5 ? -1 : i);
+  if (i !== kIdx) {
+    kIdx = i;
+    renderLine(kCur, kLines[i]); renderLine(kNext, i >= 0 ? kLines[i + 1] : kLines.find(l => l.t0 > t));
+  }
+  for (const sp of kCur.children) {
+    const a = +sp.dataset.a, b = +sp.dataset.b;
+    if (t >= b) sp.classList.add('sung');
+    else { sp.classList.remove('sung'); sp.style.setProperty('--p', Math.max(0, Math.min(100, (t - a) / Math.max(.05, b - a) * 100)) + '%'); }
+  }
+}
 // the icons around the cube appear (and vanish) exactly when the dissolve front passes over them
 const FRONT_EL = ['left', 'right', 'up', 'down', 'delta', 'logo', 'fx', 'inertia'].map(id => document.getElementById(id));
 function revealByFront() {
@@ -897,6 +943,7 @@ function stageFrame(dt) {
   stageMat.uniforms.aspect.value = camera.aspect;
   if (stageTo) syncStage(false);
   revealByFront();
+  karaoke();
   document.body.classList.toggle('can-expand', !!(playingTrack && (playingTrack.full || playingTrack.video)));
   const open = stageTo === 1 && stageP >= 1;
   document.body.classList.toggle('native', open);
