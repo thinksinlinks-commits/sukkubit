@@ -102,7 +102,7 @@
 
   footer { position: fixed; left: calc(10px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); pointer-events: none;
     width: min(340px, calc(100vw - 160px)); }   /* the player sits in the bottom-left corner */
-  @media (orientation: landscape) and (max-height: 500px) { footer { width: min(300px, calc(50vw - 60px)); } }
+  @media (orientation: landscape) and (max-height: 500px) { footer { width: min(250px, calc(50vw - 60px)); } }
   @media (orientation: portrait) { footer { right: calc(10px + env(safe-area-inset-right)); width: auto; } }   /* phones: full width, so the title fits */
   .player { pointer-events: auto; width: 100%; background: var(--panel); border: 1px solid var(--line);
     border-radius: 18px; padding: 12px 14px; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
@@ -133,6 +133,11 @@
   .magnet.pull img { filter: brightness(1.45) drop-shadow(0 0 12px #00e5ff) drop-shadow(0 0 20px rgba(255,70,40,.55)); transform: scale(1.12); }
   .magnet { transform: translate(-50%, -50%); z-index: 3; }   /* left/top are set by layoutMagnets() */
   @media (max-width: 420px) { .title { font-size: 21px; } }
+  /* a phone on its side: a compact player (author, 2026-10-27: «на телефоне большие кнопки») */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .player { padding: 7px 10px; border-radius: 14px; grid-template-columns: 38px 1fr; gap: 2px 9px; }
+    .play { width: 38px; height: 38px; } .play svg { width: 16px; height: 16px; } .title { font-size: 18px; }
+    .meta { flex-wrap: wrap; row-gap: 0; } .time { font-size: 11px; } }   /* the time goes under the title when it does not fit */
 </style>
 </head>
 <body>
@@ -200,8 +205,9 @@ const TRACKS = [
   { code: '01', arrow: '→', title: 'Вы правы',       face: 1, video: 'assets/vy-pravy.mp4',       lyrics: 'assets/vy-pravy-lyrics.json', audio: 'assets/vy-pravy.mp3.bin' },
   { code: '10', arrow: '↓', title: 'Теневой опцион', face: 2, video: 'assets/tenevoy-option.mp4', audio: 'assets/tenevoy-option.mp3.bin' },
   { code: '11', arrow: '↑', title: 'Новая фаза',     face: 3, video: 'assets/novaya-faza.mp4', full: 'assets/novaya-faza-full.mp4', audio: 'assets/novaya-faza.mp3.bin' },
-  // the title track lives on the contents face: no row of its own, the faces dissolve and the scene plays inside the cube
-  { code: '',   arrow: '',  title: 'Суккубить',      face: 4, scene: true, lyrics: 'assets/sukkubit-lyrics.json', audio: 'assets/sukkubit.mp3.bin' },
+  // the title track lives on the contents face: no row of its own, the faces dissolve and the scene plays inside the cube;
+  // ⤢ opens its clip, the scene rendered offline (author, 2026-10-27: «как в rewind смотреть клип, который мы сделали»)
+  { code: '',   arrow: '',  title: 'Суккубить',      face: 4, scene: true, full: 'assets/sukkubit-clip.mp4', sync: true, wide: true, lyrics: 'assets/sukkubit-lyrics.json', audio: 'assets/sukkubit.mp3.bin' },
 ];
 const CONTENTS_FACE = 4;
 let ROWS = TRACKS.filter(t => t.face !== CONTENTS_FACE);     // the rows of the contents (placeWorld() orders them)
@@ -227,7 +233,7 @@ const inviteKey = new URLSearchParams(location.search).get('k');
 // .bin files; the key comes from the home server (the tunnel) for a Telegram user or an invite link.
 const ENCRYPTED = true;
 // media fingerprints, path -> content hash (build_cdn.py fills them in): a changed file downloads once more, the rest stay
-const MEDIA_VER = {"assets/hd/kvant-full.mp4": "06d7262c7c", "assets/hd/kvant.mp4": "d8c7347738", "assets/hd/novaya-faza-full.mp4": "43152e6a55", "assets/hd/novaya-faza.mp4": "cccb5455da", "assets/hd/rewind-clip.mp4": "a638eb3eb5", "assets/hd/rewind-full.mp4": "bb1a6aa707", "assets/hd/rewind.mp4": "2ac2702f0e", "assets/hd/sukkubit-saga-faces.mp4": "7487c7381e", "assets/hd/tenevoy-option.mp4": "67233bf29b", "assets/hd/vy-pravy.mp4": "c29dacd9b1", "assets/kvant-full.mp4": "1dbc031c35", "assets/kvant.mp3.bin": "98993d12fd", "assets/kvant.mp4": "1c5067ab96", "assets/m/kvant-full.mp4": "c29ccb61de", "assets/m/kvant.mp4": "a5e8d1668d", "assets/m/novaya-faza-full.mp4": "443647dc5a", "assets/m/novaya-faza.mp4": "a3267fa587", "assets/m/rewind-clip.mp4": "0f09905e9e", "assets/m/rewind-full.mp4": "e2a2cd8228", "assets/m/rewind.mp4": "55c4e13b3d", "assets/m/sukkubit-saga-faces.mp4": "50b08f4183", "assets/m/tenevoy-option.mp4": "7a0b11f68b", "assets/m/vy-pravy.mp4": "278be9f19a", "assets/novaya-faza-full.mp4": "64f22096d3", "assets/novaya-faza.mp3.bin": "76f46ca9b8", "assets/novaya-faza.mp4": "782b070e48", "assets/rewind-clip.mp4": "053d2a27e5", "assets/rewind-full.mp4": "ada9be3876", "assets/rewind.m4a.bin": "052c9da890", "assets/rewind.mp4": "5c1cfe6b5b", "assets/sk2/loop-glory.mp4": "d1dca7cf2a", "assets/sk2/loop-money.mp4": "5215ed95a9", "assets/sk2/loop-power.mp4": "44eb49877d", "assets/sk2/milord.mp4": "620547bc06", "assets/sk2/mint.mp4": "4efc1f97c4", "assets/sk2/pasture.mp4": "d657bbeccc", "assets/sk2/queen-burn.mp4": "43df779c4f", "assets/sk2/reaper-alch.mp4": "86c4a2d23d", "assets/sk2/reaper-backwalk.mp4": "e5a1083966", "assets/sk2/reaper-coinwalk.mp4": "96de806c56", "assets/sk2/reaper-exit.mp4": "07b221a160", "assets/sk2/reaper-lead.mp4": "9bc5d1e3a1", "assets/sk2/reaper-moral.mp4": "bb347c3228", "assets/sk2/reaper-morph.mp4": "80a98904be", "assets/sk2/reaper-sidewalk.mp4": "573ba69930", "assets/sk2/reaper-strike.mp4": "8df6bd3b08", "assets/sk2/reaper-talent.mp4": "4ebeaecfc5", "assets/sk2/reaper-top.mp4": "e27ada7370", "assets/sk2/saga-front.mp4": "0d153b0000", "assets/sk2/succubus-out4.mp4": "132b2421f7", "assets/sk2/succubus-sit-idle.mp4": "8b5b3ec543", "assets/sk2/succubus-sit-laugh.mp4": "dff1df3691", "assets/sk2/succubus-sit-offer.mp4": "ed19726340", "assets/sk2/succubus-sit-want.mp4": "5ba81b4607", "assets/sukkubit-saga-faces.mp4": "e225fb7f98", "assets/sukkubit.mp3.bin": "3bca882894", "assets/tenevoy-option.mp3.bin": "03f3e50eba", "assets/tenevoy-option.mp4": "b9abcde988", "assets/vy-pravy.mp3.bin": "0ef02c83f8", "assets/vy-pravy.mp4": "9633bbc5ca"};
+const MEDIA_VER = {"assets/hd/kvant-full.mp4": "06d7262c7c", "assets/hd/kvant.mp4": "d8c7347738", "assets/hd/novaya-faza-full.mp4": "43152e6a55", "assets/hd/novaya-faza.mp4": "cccb5455da", "assets/hd/rewind-clip.mp4": "a638eb3eb5", "assets/hd/rewind-full.mp4": "bb1a6aa707", "assets/hd/rewind.mp4": "2ac2702f0e", "assets/hd/sukkubit-clip.mp4": "a7ddbc240a", "assets/hd/sukkubit-saga-faces.mp4": "7487c7381e", "assets/hd/tenevoy-option.mp4": "67233bf29b", "assets/hd/vy-pravy.mp4": "c29dacd9b1", "assets/kvant-full.mp4": "1dbc031c35", "assets/kvant.mp3.bin": "98993d12fd", "assets/kvant.mp4": "1c5067ab96", "assets/m/kvant-full.mp4": "c29ccb61de", "assets/m/kvant.mp4": "a5e8d1668d", "assets/m/novaya-faza-full.mp4": "443647dc5a", "assets/m/novaya-faza.mp4": "a3267fa587", "assets/m/rewind-clip.mp4": "0f09905e9e", "assets/m/rewind-full.mp4": "e2a2cd8228", "assets/m/rewind.mp4": "55c4e13b3d", "assets/m/sukkubit-clip.mp4": "416f6b970f", "assets/m/sukkubit-saga-faces.mp4": "50b08f4183", "assets/m/tenevoy-option.mp4": "7a0b11f68b", "assets/m/vy-pravy.mp4": "278be9f19a", "assets/novaya-faza-full.mp4": "64f22096d3", "assets/novaya-faza.mp3.bin": "76f46ca9b8", "assets/novaya-faza.mp4": "782b070e48", "assets/rewind-clip.mp4": "053d2a27e5", "assets/rewind-full.mp4": "ada9be3876", "assets/rewind.m4a.bin": "052c9da890", "assets/rewind.mp4": "5c1cfe6b5b", "assets/sk2/loop-glory.mp4": "d1dca7cf2a", "assets/sk2/loop-money.mp4": "5215ed95a9", "assets/sk2/loop-power.mp4": "44eb49877d", "assets/sk2/milord.mp4": "620547bc06", "assets/sk2/mint.mp4": "4efc1f97c4", "assets/sk2/pasture.mp4": "d657bbeccc", "assets/sk2/queen-burn.mp4": "43df779c4f", "assets/sk2/reaper-alch.mp4": "86c4a2d23d", "assets/sk2/reaper-backwalk.mp4": "e5a1083966", "assets/sk2/reaper-coinwalk.mp4": "96de806c56", "assets/sk2/reaper-exit.mp4": "07b221a160", "assets/sk2/reaper-lead.mp4": "9bc5d1e3a1", "assets/sk2/reaper-moral.mp4": "bb347c3228", "assets/sk2/reaper-morph.mp4": "80a98904be", "assets/sk2/reaper-sidewalk.mp4": "573ba69930", "assets/sk2/reaper-strike.mp4": "8df6bd3b08", "assets/sk2/reaper-talent.mp4": "4ebeaecfc5", "assets/sk2/reaper-top.mp4": "e27ada7370", "assets/sk2/saga-front.mp4": "0d153b0000", "assets/sk2/succubus-out4.mp4": "132b2421f7", "assets/sk2/succubus-sit-idle.mp4": "8b5b3ec543", "assets/sk2/succubus-sit-laugh.mp4": "dff1df3691", "assets/sk2/succubus-sit-offer.mp4": "ed19726340", "assets/sk2/succubus-sit-want.mp4": "5ba81b4607", "assets/sukkubit-clip.mp4": "4264df7604", "assets/sukkubit-saga-faces.mp4": "e225fb7f98", "assets/sukkubit.mp3.bin": "3bca882894", "assets/tenevoy-option.mp3.bin": "03f3e50eba", "assets/tenevoy-option.mp4": "b9abcde988", "assets/vy-pravy.mp3.bin": "0ef02c83f8", "assets/vy-pravy.mp4": "9633bbc5ca"};
 const session = ENCRYPTED ? Promise.resolve() : (tg && tg.initData)
   ? fetch('api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData: tg.initData }), credentials: 'same-origin' }).catch(() => {})
@@ -3945,8 +3951,9 @@ function startTrack(tr) {
     loadingTrack = null; meterDone(tr);
     audio.src = src; playingTrack = tr; epStart(tr); audio.play().catch(() => {}); loadLyrics(tr);
     if (current === tr.face) $('hint').textContent = '';
-    // as in Telegram: the clip comes whole, then plays without stalls; the cover opens it (expand)
-    if (tr.full || tr.video) stageSrc(tr, QUALITY, meter(alive, tr, 'видео'), ab.signal).then(() => { if (alive()) meterDone(tr); }, () => { if (alive()) meterDone(tr); });
+    // as in Telegram: the clip comes whole, then plays without stalls; the cover opens it (expand). The scene track plays live in
+    // the cube: its clip comes only when ⤢ asks for it
+    if ((tr.full || tr.video) && !tr.scene) stageSrc(tr, QUALITY, meter(alive, tr, 'видео'), ab.signal).then(() => { if (alive()) meterDone(tr); }, () => { if (alive()) meterDone(tr); });
     if (tr.scene) videoSrc(SAGA_CLIP, QUALITY, undefined, ab.signal).catch(() => {});  // the saga of the ending, quietly in advance
   }).catch(() => {
     if (!alive()) return;
@@ -4169,6 +4176,9 @@ function resize() {
   camera.position.z = Math.max(6.6, 1.8 / (t18 * camera.aspect));  // room for the magnets on a phone
   // a phone on its side: low screen, so the cube steps back until the up/down magnets clear it
   if (!desktop(w, h)) camera.position.z = Math.max(camera.position.z, 1.55 * (h / 2) / (t18 * (h / 2 - 1.1 * magSize(w, h))));
+  // (author, 2026-10-27: «на телефоне большие кнопки и маленький кубит в горизонтальном положении») sideways the cube takes the
+  // height: its near face reaches the small up/down magnets pressed to the screen edges, the side ones stay by it
+  if (sideways(w, h)) camera.position.z = Math.max(1.8 / (t18 * camera.aspect), 1 + (h / 2) / (t18 * (h / 2 - 1.05 * magSize(w, h) - 4)));
   camera.updateProjectionMatrix();
   const fx = document.getElementById('fx'), dpr = Math.min(window.devicePixelRatio || 1, 2);
   fx.width = w * dpr; fx.height = h * dpr; fx.style.width = w + 'px'; fx.style.height = h + 'px';
@@ -4183,10 +4193,11 @@ function placeMagnets() {
 }
 placeMagnets();
 const magnetAt = dir => Object.keys(MAG_V).find(id => MAG_V[id] === MSLOT[dir]);   // the magnet that sits in that direction
-let PX_PER_UNIT = 1, CUBE_HALF = 100, MAG_R = 150;
+let PX_PER_UNIT = 1, CUBE_HALF = 100, MAG_R = 150, MAG_RY = 150;   // MAG_RY: the up/down magnets' distance
 // a desktop by the shorter side: a phone on its side is wide, but still a phone
 const desktop = (w, h) => Math.min(w, h) >= 600;
-const magSize = (w, h) => desktop(w, h) ? 96 : 60;            // bigger magnets on a desktop
+const sideways = (w, h) => !desktop(w, h) && w > h;              // a phone on its side
+const magSize = (w, h) => desktop(w, h) ? 96 : sideways(w, h) ? 46 : 60;   // bigger magnets on a desktop, smaller on a phone on its side
 function layoutMagnets() {
   const w = host.clientWidth, h = host.clientHeight;
   PX_PER_UNIT = (h / 2) / (camera.position.z * Math.tan(THREE.MathUtils.degToRad(18)));
@@ -4194,13 +4205,17 @@ function layoutMagnets() {
   const MAG = magSize(w, h);
   document.documentElement.style.setProperty('--mag', MAG + 'px');
   const roomy = desktop(w, h);                                  // desktop: out towards the window edges
-  MAG_R = Math.min(w / 2 - MAG * 0.6, h / 2 - MAG * 0.6, roomy ? Infinity : CUBE_HALF + 100);
+  MAG_R = Math.min(w / 2 - MAG * 0.6, h / 2 - MAG * 0.6, roomy ? Infinity : CUBE_HALF + 100); MAG_RY = MAG_R;
+  if (sideways(w, h)) {                                         // up/down at the screen edges, left/right just clear of the near face
+    MAG_RY = h / 2 - MAG * 0.55;
+    MAG_R = Math.min(w / 2 - MAG * 0.6, PX_PER_UNIT * camera.position.z / (camera.position.z - 1) + MAG * 0.95);
+  }
   // the near face is bigger on screen than the cube's middle: the lyrics start just under it
   const near = PX_PER_UNIT * camera.position.z / (camera.position.z - 1);
   document.documentElement.style.setProperty('--k-top', Math.round(h / 2 + near * 1.1 + 4) + 'px');
   for (const [d, [vx, vy]] of Object.entries(MAG_V)) {
     const m = document.getElementById(d);
-    m.style.left = (w / 2 + vx * MAG_R) + 'px'; m.style.top = (h / 2 + vy * MAG_R) + 'px';
+    m.style.left = (w / 2 + vx * MAG_R) + 'px'; m.style.top = (h / 2 + vy * MAG_RY) + 'px';
   }
 }
 window.addEventListener('resize', resize); resize();
@@ -4267,7 +4282,7 @@ function drawFx(t, pa) {
   if (idleArc.s !== undefined && t >= idleArc.s && t - idleArc.s < 0.18 && !(pa && pa.dir === idleArc.d)) arcs.push([idleArc.d, 0.35, 1]);
   for (const [d, v, n] of arcs) {
     const [vx, vy] = MAG_V[d];
-    const mx = w / 2 + vx * MAG_R, my = h / 2 + vy * MAG_R;
+    const mx = w / 2 + vx * MAG_R, my = h / 2 + vy * MAG_RY;
     const ex = cx + vx * CUBE_HALF * 0.98, ey = cy + vy * CUBE_HALF * 0.98;     // the cube edge facing the magnet
     const L = Math.hypot(ex - mx, ey - my), px = -vy, py = vx;
     for (let k = 0; k < n + 2; k++) {
@@ -4354,7 +4369,7 @@ function frame() {
   // idle life: the cube floats and breathes a little around its face
   const bob = Math.sin(t * 1.1) * 0.06;
   const pa = pullAmount(t);
-  const reach = Math.max(0, MAG_R - CUBE_HALF - 50) / PX_PER_UNIT;   // stop just short of the magnet
+  const reach = Math.max(0, (pa && MAG_V[pa.dir][1] ? MAG_RY : MAG_R) - CUBE_HALF - 50) / PX_PER_UNIT;   // stop just short of the magnet
   cube.position.x = pa ? MAG_V[pa.dir][0] * pa.v * reach : 0;
   cube.position.y = bob - (pa ? MAG_V[pa.dir][1] * pa.v * reach : 0);
   const sway = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.sin(t * 0.7) * 0.035, Math.sin(t * 0.5) * 0.05, 0));
