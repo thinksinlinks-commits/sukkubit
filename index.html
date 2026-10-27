@@ -81,6 +81,30 @@
     background: none; color: var(--cyan); cursor: pointer; display: none; place-items: center; padding: 0; font: 15px/1 sans-serif; }
   body.can-expand #stagebtn { display: grid; }
   body.can-expand #dl { right: 44px; }
+  /* ⤢ as a little window into the clip (author, 2026-10-27: «выделить, чтобы пользователю хотелось на неё нажать… за ней самая
+     ценная часть»): the clip's strongest shots loop in it, a cyan and a red light run round its rim (the magnets' poles). It
+     stands in the bottom-right corner (sideways only) whenever the open face's track has a clip, played or not; the round ⤢ stays for the loops */
+  @property --pa { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+  @keyframes peekrun { to { --pa: 360deg; } }
+  @keyframes peekglow { 50% { box-shadow: 0 0 22px rgba(0,229,255,.55), 0 0 6px rgba(255,90,60,.35); } }
+  @keyframes peekin { from { transform: translateY(12px) scale(.6); opacity: 0; } }
+  /* (author, 2026-10-27: «может сделать только для горизонтального вида и в правом углу, где пусто?») sideways and on a desktop
+     only, in the empty bottom-right corner; upright the round ⤢ stays */
+  #peek { position: fixed; right: calc(14px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
+    width: clamp(150px, 24vw, 300px); aspect-ratio: 16 / 9; padding: 0; border: none;
+    border-radius: 12px; background: none; cursor: pointer; display: none; pointer-events: auto;
+    box-shadow: 0 0 12px rgba(0,229,255,.3); animation: peekglow 2.6s ease-in-out infinite; }
+  #peek.sq { width: clamp(90px, 13.5vw, 170px); aspect-ratio: 1; }
+  body.peek #peek { display: block; animation: peekglow 2.6s ease-in-out infinite, peekin .5s cubic-bezier(.2,1.6,.4,1); }
+  body.peek #stagebtn { display: none; }
+  body.peek #dl { right: 10px; }
+  #peek::before { content: ''; position: absolute; inset: -3px; border-radius: 15px; animation: peekrun 3.2s linear infinite;
+    background: conic-gradient(from var(--pa), rgba(0,229,255,0) 0deg, #00e5ff 45deg, #e8fcff 62deg, rgba(0,229,255,0) 115deg,
+      rgba(255,90,60,0) 180deg, #ff5a3c 225deg, #ffd2c8 240deg, rgba(255,90,60,0) 295deg); }
+  #peek video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 12px; display: block; background: #05080b; }
+  #peek i { position: absolute; right: 6px; bottom: 5px; font: 16px/1 sans-serif; font-style: normal; color: #e8fcff;
+    text-shadow: 0 0 3px #000, 0 0 8px #00e5ff; pointer-events: none; }
+  #peek:active { transform: scale(.94); }
   /* the open stage is a plain <video> (hardware decoding) on the blurred 32x32 copy of itself */
   #stage-native { position: fixed; inset: 0; z-index: 5; display: none; background: #05080b; overflow: hidden; }
   body.native #stage-native { display: block; }
@@ -99,6 +123,16 @@
   @keyframes deltaGlow { 50% { text-shadow: 0 0 8px #fff, 0 0 20px #00e5ff, 0 0 44px #00e5ff, 0 0 80px rgba(0,229,255,.9); } }
   #delta.hit { color: #fff; text-shadow: 0 0 10px #fff, 0 0 26px #00e5ff, 0 0 60px #00e5ff, 0 0 110px rgba(255,80,60,.8); }
   #fx { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
+  /* they think sin links: the fire world (author, 2026-10-27) — arrows, titles, buttons and edges burn like the «they» of the nick */
+  body.they { --cyan: #ff6a2a; --line: rgba(255, 90, 31, 0.3); }
+  body.they .play { background: rgba(255, 90, 31, 0.08); }
+  body.they.k-on #kbtn { box-shadow: 0 0 8px rgba(255,90,31,.4); }
+  body.they .magnet img { filter: drop-shadow(0 0 6px rgba(255,90,31,.3)); }
+  body.they .magnet.pull img { filter: brightness(1.35) drop-shadow(0 0 12px #ff5a1f) drop-shadow(0 0 20px rgba(0,229,255,.45)); }
+  body.they #delta { text-shadow: none; padding: 0; animation: deltaFire 1.6s ease-in-out infinite; }
+  body.they #delta img { width: 100%; height: 100%; display: block; pointer-events: none; }
+  @keyframes deltaFire { 50% { filter: brightness(1.3) drop-shadow(0 0 10px #ff5a1f); } }
+  body.they #delta.hit { filter: brightness(1.7) drop-shadow(0 0 18px #ffb36b); }
 
   footer { position: fixed; left: calc(10px + env(safe-area-inset-left)); bottom: calc(10px + env(safe-area-inset-bottom)); pointer-events: none;
     width: min(340px, calc(100vw - 160px)); }   /* the player sits in the bottom-left corner */
@@ -160,6 +194,7 @@
 <div id="karaoke" aria-live="off"><div class="k-line" id="k-cur"></div><div class="k-line next" id="k-next"></div></div>
 <div id="stage-native"><canvas id="stage-amb" width="32" height="32"></canvas></div>
 <footer>
+  <button id="peek" aria-label="Смотреть клип на весь экран" title="Смотреть клип"><video muted loop playsinline preload="none"></video><i>⤢</i></button>
   <div class="player">
     <button class="play" id="play" aria-label="Играть" disabled>
       <svg id="icon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
@@ -233,7 +268,7 @@ const inviteKey = new URLSearchParams(location.search).get('k');
 // .bin files; the key comes from the home server (the tunnel) for a Telegram user or an invite link.
 const ENCRYPTED = true;
 // media fingerprints, path -> content hash (build_cdn.py fills them in): a changed file downloads once more, the rest stay
-const MEDIA_VER = {"assets/hd/kvant-full.mp4": "06d7262c7c", "assets/hd/kvant.mp4": "d8c7347738", "assets/hd/novaya-faza-full.mp4": "43152e6a55", "assets/hd/novaya-faza.mp4": "cccb5455da", "assets/hd/rewind-clip.mp4": "a638eb3eb5", "assets/hd/rewind-full.mp4": "bb1a6aa707", "assets/hd/rewind.mp4": "2ac2702f0e", "assets/hd/sukkubit-clip.mp4": "a7ddbc240a", "assets/hd/sukkubit-saga-faces.mp4": "7487c7381e", "assets/hd/tenevoy-option.mp4": "67233bf29b", "assets/hd/vy-pravy.mp4": "c29dacd9b1", "assets/kvant-full.mp4": "1dbc031c35", "assets/kvant.mp3.bin": "98993d12fd", "assets/kvant.mp4": "1c5067ab96", "assets/m/kvant-full.mp4": "c29ccb61de", "assets/m/kvant.mp4": "a5e8d1668d", "assets/m/novaya-faza-full.mp4": "443647dc5a", "assets/m/novaya-faza.mp4": "a3267fa587", "assets/m/rewind-clip.mp4": "0f09905e9e", "assets/m/rewind-full.mp4": "e2a2cd8228", "assets/m/rewind.mp4": "55c4e13b3d", "assets/m/sukkubit-clip.mp4": "416f6b970f", "assets/m/sukkubit-saga-faces.mp4": "50b08f4183", "assets/m/tenevoy-option.mp4": "7a0b11f68b", "assets/m/vy-pravy.mp4": "278be9f19a", "assets/novaya-faza-full.mp4": "64f22096d3", "assets/novaya-faza.mp3.bin": "76f46ca9b8", "assets/novaya-faza.mp4": "782b070e48", "assets/rewind-clip.mp4": "053d2a27e5", "assets/rewind-full.mp4": "ada9be3876", "assets/rewind.m4a.bin": "052c9da890", "assets/rewind.mp4": "5c1cfe6b5b", "assets/sk2/loop-glory.mp4": "d1dca7cf2a", "assets/sk2/loop-money.mp4": "5215ed95a9", "assets/sk2/loop-power.mp4": "44eb49877d", "assets/sk2/milord.mp4": "620547bc06", "assets/sk2/mint.mp4": "4efc1f97c4", "assets/sk2/pasture.mp4": "d657bbeccc", "assets/sk2/queen-burn.mp4": "43df779c4f", "assets/sk2/reaper-alch.mp4": "86c4a2d23d", "assets/sk2/reaper-backwalk.mp4": "e5a1083966", "assets/sk2/reaper-coinwalk.mp4": "96de806c56", "assets/sk2/reaper-exit.mp4": "07b221a160", "assets/sk2/reaper-lead.mp4": "9bc5d1e3a1", "assets/sk2/reaper-moral.mp4": "bb347c3228", "assets/sk2/reaper-morph.mp4": "80a98904be", "assets/sk2/reaper-sidewalk.mp4": "573ba69930", "assets/sk2/reaper-strike.mp4": "8df6bd3b08", "assets/sk2/reaper-talent.mp4": "4ebeaecfc5", "assets/sk2/reaper-top.mp4": "e27ada7370", "assets/sk2/saga-front.mp4": "0d153b0000", "assets/sk2/succubus-out4.mp4": "132b2421f7", "assets/sk2/succubus-sit-idle.mp4": "8b5b3ec543", "assets/sk2/succubus-sit-laugh.mp4": "dff1df3691", "assets/sk2/succubus-sit-offer.mp4": "ed19726340", "assets/sk2/succubus-sit-want.mp4": "5ba81b4607", "assets/sukkubit-clip.mp4": "4264df7604", "assets/sukkubit-saga-faces.mp4": "e225fb7f98", "assets/sukkubit.mp3.bin": "3bca882894", "assets/tenevoy-option.mp3.bin": "03f3e50eba", "assets/tenevoy-option.mp4": "b9abcde988", "assets/vy-pravy.mp3.bin": "0ef02c83f8", "assets/vy-pravy.mp4": "9633bbc5ca"};
+const MEDIA_VER = {"assets/hd/kvant-full.mp4": "06d7262c7c", "assets/hd/kvant.mp4": "d8c7347738", "assets/hd/novaya-faza-full.mp4": "43152e6a55", "assets/hd/novaya-faza.mp4": "cccb5455da", "assets/hd/rewind-clip.mp4": "a638eb3eb5", "assets/hd/rewind-full.mp4": "bb1a6aa707", "assets/hd/rewind.mp4": "2ac2702f0e", "assets/hd/sukkubit-clip.mp4": "a7ddbc240a", "assets/hd/sukkubit-saga-faces.mp4": "7487c7381e", "assets/hd/tenevoy-option.mp4": "67233bf29b", "assets/hd/vy-pravy.mp4": "c29dacd9b1", "assets/kvant-full.mp4": "1dbc031c35", "assets/kvant.mp3.bin": "98993d12fd", "assets/kvant.mp4": "1c5067ab96", "assets/m/kvant-full.mp4": "c29ccb61de", "assets/m/kvant.mp4": "a5e8d1668d", "assets/m/novaya-faza-full.mp4": "443647dc5a", "assets/m/novaya-faza.mp4": "a3267fa587", "assets/m/rewind-clip.mp4": "0f09905e9e", "assets/m/rewind-full.mp4": "e2a2cd8228", "assets/m/rewind.mp4": "55c4e13b3d", "assets/m/sukkubit-clip.mp4": "416f6b970f", "assets/m/sukkubit-saga-faces.mp4": "50b08f4183", "assets/m/tenevoy-option.mp4": "7a0b11f68b", "assets/m/vy-pravy.mp4": "278be9f19a", "assets/novaya-faza-full.mp4": "64f22096d3", "assets/novaya-faza.mp3.bin": "76f46ca9b8", "assets/novaya-faza.mp4": "782b070e48", "assets/prev/kvant-full.mp4": "9613f248d0", "assets/prev/novaya-faza-full.mp4": "95660916ce", "assets/prev/rewind-clip.mp4": "e3ad89973b", "assets/prev/sukkubit-clip.mp4": "c6fd765462", "assets/rewind-clip.mp4": "053d2a27e5", "assets/rewind-full.mp4": "ada9be3876", "assets/rewind.m4a.bin": "052c9da890", "assets/rewind.mp4": "5c1cfe6b5b", "assets/sk2/loop-glory.mp4": "d1dca7cf2a", "assets/sk2/loop-money.mp4": "5215ed95a9", "assets/sk2/loop-power.mp4": "44eb49877d", "assets/sk2/milord.mp4": "620547bc06", "assets/sk2/mint.mp4": "4efc1f97c4", "assets/sk2/pasture.mp4": "d657bbeccc", "assets/sk2/queen-burn.mp4": "43df779c4f", "assets/sk2/reaper-alch.mp4": "86c4a2d23d", "assets/sk2/reaper-backwalk.mp4": "e5a1083966", "assets/sk2/reaper-cell.mp4": "1585339498", "assets/sk2/reaper-coinwalk.mp4": "96de806c56", "assets/sk2/reaper-exit.mp4": "07b221a160", "assets/sk2/reaper-lead.mp4": "9bc5d1e3a1", "assets/sk2/reaper-moral.mp4": "bb347c3228", "assets/sk2/reaper-morph.mp4": "80a98904be", "assets/sk2/reaper-sidewalk.mp4": "573ba69930", "assets/sk2/reaper-strike.mp4": "8df6bd3b08", "assets/sk2/reaper-talent.mp4": "4ebeaecfc5", "assets/sk2/reaper-top.mp4": "e27ada7370", "assets/sk2/saga-front.mp4": "0d153b0000", "assets/sk2/succubus-out4.mp4": "132b2421f7", "assets/sk2/succubus-sit-idle.mp4": "8b5b3ec543", "assets/sk2/succubus-sit-laugh.mp4": "dff1df3691", "assets/sk2/succubus-sit-offer.mp4": "ed19726340", "assets/sk2/succubus-sit-want.mp4": "5ba81b4607", "assets/sukkubit-clip.mp4": "4264df7604", "assets/sukkubit-saga-faces.mp4": "e225fb7f98", "assets/sukkubit.mp3.bin": "3bca882894", "assets/tenevoy-option.mp3.bin": "03f3e50eba", "assets/tenevoy-option.mp4": "b9abcde988", "assets/vy-pravy.mp3.bin": "0ef02c83f8", "assets/vy-pravy.mp4": "9633bbc5ca"};
 const session = ENCRYPTED ? Promise.resolve() : (tg && tg.initData)
   ? fetch('api/session', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ initData: tg.initData }), credentials: 'same-origin' }).catch(() => {})
@@ -247,9 +282,10 @@ const store = {
 };
 // two worlds on the «s» of the nick (together with «кубит» / «кубик»):
 // «s» left — he thinks in links: Rewind ←, Вы правы →, the glory of deeds (Новая фаза) on top, power (Теневой опцион) below;
-// «s» right — they think sin links: Rewind →, Вы правы ←, power on top («передавая вверх бессменным существам»), codes inverted.
-// The first swipe follows the viewer's arrow of time; round the ring МОР-ТАЛ comes first either way.
-const WORLD_FACES = { he: { '00': 0, '01': 1, '10': 3, '11': 2 }, they: { '00': 1, '01': 0, '10': 2, '11': 3 } };
+// «s» right — they think sin links (author, 2026-10-27): Rewind ← power, Вы правы → money, Теневой опцион at the back — glory
+// «в тени», where ∆ is in he; Новая фаза on top and Квант below are fire grates, the reaper caught between them; codes inverted.
+// he keeps its order: there the reaper is free (∆ flies), in they he is caged and glory flies — the difference is the story.
+const WORLD_FACES = { he: { '00': 0, '01': 1, '10': 3, '11': 2, '∆': 5 }, they: { '00': 0, '01': 1, '11': 2, '∆': 3, '10': 5 } };
 const FACE_ARROW = ['←', '→', '↓', '↑'];
 let WORLD = store.get('sk-mode') === 'кубик' ? 'they' : 'he';
 const flipCode = c => c.replace(/[01]/g, d => d === '0' ? '1' : '0');   // 00 ↔ 11, 01 ↔ 10
@@ -410,16 +446,21 @@ function canvasTexture(draw) {
   ctx.scale(TEX_PX / TEX, TEX_PX / TEX);   // draw in 1024 layout units at any pixel size
   return { c, ctx, tex, draw };
 }
+// the world's colour: he — cyan, they — fire, like the «they» of the nick (author, 2026-10-27: «стрелки, надписи огненные»)
+const pal = () => WORLD === 'they' ? { c: '#ff6a2a', glow: '#ff3300', rgb: '255,106,42', deep: 'rgba(150,40,0,0.35)' }
+                                   : { c: '#00e5ff', glow: '#00e5ff', rgb: '0,229,255', deep: 'rgba(0,120,140,0.35)' };
 function drawNick(ctx, y, size) {
-  const parts = [[WORLD === 'he' ? 'he ' : 'they ', WORLD === 'he' ? '#00e5ff' : '#ff5a1f', size * 0.7], ['think', '#e8fcff', size], ['<-', '#00e5ff', size], ['s', '#ffffff', size * 1.22],
-                 ['->', '#00e5ff', size], ['inlinks', '#e8fcff', size]];
+  const P = pal();
+  const parts = [[WORLD === 'he' ? 'he ' : 'they ', WORLD === 'he' ? '#00e5ff' : '#ff5a1f', size * 0.7], ['think', '#e8fcff', size], ['<-', P.c, size], ['s', '#ffffff', size * 1.22],
+                 ['->', P.c, size], ['inlinks', '#e8fcff', size]];
   let total = 0;
   for (const [t, , s] of parts) { ctx.font = `${s}px "Rubik Glitch"`; total += ctx.measureText(t).width; }
   let x = (TEX - total) / 2;
   ctx.textBaseline = 'middle';
   for (const [t, col, s] of parts) {
     ctx.font = `${s}px "Rubik Glitch"`; ctx.fillStyle = col;
-    ctx.shadowColor = col === '#00e5ff' ? '#00e5ff' : 'transparent'; ctx.shadowBlur = col === '#00e5ff' ? 12 : 0;
+    const lit = col === P.c || col === '#00e5ff';
+    ctx.shadowColor = lit ? (col === P.c ? P.glow : col) : 'transparent'; ctx.shadowBlur = lit ? 12 : 0;
     ctx.fillText(t, x, y); x += ctx.measureText(t).width;
   }
   ctx.shadowBlur = 0;
@@ -572,21 +613,32 @@ function drawLogo(ctx, cx, top, cell, t) {
 const LOGO_FACE = { top: 78, cell: 38 };
 // contents: rows are clickable (they turn the cube to the track)
 const ROW_Y0 = 682, ROW_H = 70;
+const TRADER = new Image();                                      // they: the trader with the fire die behind the contents
 const contents = canvasTexture((ctx, t) => {
+  const P = pal();
   ctx.fillStyle = '#080c0f'; ctx.fillRect(0, 0, TEX, TEX);
+  if (WORLD === 'they') {
+    if (!TRADER.src) TRADER.src = 'assets/sk2/seal-trade.jpg';
+    if (TRADER.complete && TRADER.naturalWidth) {
+      ctx.globalAlpha = 0.42; ctx.drawImage(TRADER, 0, 0, TEX, TEX); ctx.globalAlpha = 1;
+      const d = ctx.createLinearGradient(0, TEX * 0.55, 0, TEX);       // the rows stay readable over her hem
+      d.addColorStop(0, 'rgba(8,12,15,0)'); d.addColorStop(0.35, 'rgba(8,12,15,0.7)'); d.addColorStop(1, 'rgba(8,12,15,0.85)');
+      ctx.fillStyle = d; ctx.fillRect(0, TEX * 0.55, TEX, TEX * 0.45);
+    }
+  }
   const g = ctx.createRadialGradient(TEX / 2, TEX * 0.95, 50, TEX / 2, TEX * 0.95, TEX * 0.8);
-  g.addColorStop(0, 'rgba(0,120,140,0.35)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+  g.addColorStop(0, P.deep); g.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = g; ctx.fillRect(0, 0, TEX, TEX);
-  ctx.strokeStyle = 'rgba(0,229,255,0.07)'; ctx.lineWidth = 1;
+  ctx.strokeStyle = `rgba(${P.rgb},0.07)`; ctx.lineWidth = 1;
   for (let i = 0; i <= TEX; i += 51.2) { ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, TEX); ctx.moveTo(0, i); ctx.lineTo(TEX, i); ctx.stroke(); }
   drawNick(ctx, 46, 36);
   drawLogo(ctx, TEX / 2, LOGO_FACE.top, LOGO_FACE.cell, t);
-  ctx.strokeStyle = 'rgba(0,229,255,0.5)'; ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(${P.rgb},0.5)`; ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(150, 636); ctx.lineTo(TEX - 150, 636); ctx.stroke();
   ctx.textAlign = 'left';
   ROWS.forEach((tr, i) => {
     const y = ROW_Y0 + i * ROW_H;
-    ctx.fillStyle = '#00e5ff'; ctx.font = '34px "JetBrains Mono"'; ctx.textAlign = 'center';
+    ctx.fillStyle = P.c; ctx.font = '34px "JetBrains Mono"'; ctx.textAlign = 'center';
     ctx.fillText(tr.shown, 200, y); ctx.fillText(tr.arrow, 262, y); ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     ctx.fillStyle = tr.audio ? '#e8fcff' : 'rgba(232,252,255,0.6)'; ctx.font = '500 50px "Cormorant Garamond"';
@@ -1012,7 +1064,7 @@ const SAGA_FACE = { 1: { w: [188.0, 192.3] }, 4: { w: [193.0, 197.3] }, 0: { w: 
 const SAGA_TURNS = [188.4, 193.4, 198.4, 203.4];
 const SAGA_FRONT = [[0, 189.2, 193.8], [5, 194.2, 198.8], [1, 199.2, 203.8], [4, 204.2, 213]];   // out in a turn's first half, in in its second: the cut at mid-turn is unseen
 // the fate is the track's (its quadrant of the clip): Вы правы — the oligarch, the contents — the businessman, Rewind — the family, Квант — the alchemist
-const SAGA_Q = { '01': [0, .5], '': [.5, .5], '00': [0, 0], '∆': [.5, 0] };
+const SAGA_Q = { '01': [0, .5], '': [.5, .5], '00': [0, 0], '∆': [.5, 0], '10': [.5, 0] };   // '10': they's back face keeps the alchemist
 const sagaQ = f => { const tr = TRACKS.find(t => t.face === f); return tr && SAGA_Q[tr.code] || [0, 0]; };
 // «Милорд, казна пустеет, — Ничего!» (author, 2026-10-21): in the break the cube turns a quarter to the power face, its crown
 // becomes the prince on his throne, the treasurer brings the empty chest; on «ничего» the prince snaps his fingers and the cube
@@ -3592,6 +3644,99 @@ function skUpdate2(t, vis, clockT) {
   SK.fx = fx; SK.edge = edge;
 }
 
+// ------------------------------------------------------------------ they: the fire world's skin (author, 2026-10-27)
+// On the ring the исчадия: power on Rewind's face (←), money on Вы правы's (→), glory at the back (Теневой опцион); the trader
+// is drawn into the contents. On top (Новая фаза) and below (Квант) fire grates, and through them the reaper in the cell
+// looks up at the one and down at the other. A face's own video comes through while its track plays. Off in he and while
+// «Суккубить» plays (its own prison story).
+const SKIN = { on: 0, req: false, seals: [], grates: [], reapers: [], cell: null, play: [0, 0, 0, 0, 0, 0] };
+const SKIN_SEAL = { 0: 'seal-power.jpg', 1: 'seal-money.jpg', 5: 'seal-glory.jpg' };
+const SKIN_ROT = { 0: [0, Math.PI / 2], 1: [0, -Math.PI / 2], 5: [0, Math.PI], 2: [-Math.PI / 2, 0], 3: [Math.PI / 2, 0] };   // [x, y]
+function grateTexture() {
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const ctx = c.getContext('2d');
+  const bars = (w, col, blur) => {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.shadowColor = '#ff3300'; ctx.shadowBlur = blur; ctx.lineCap = 'round';
+    ctx.strokeRect(14, 14, 484, 484);
+    for (let i = 1; i < 5; i++) { const x = 14 + i * 96.8; ctx.beginPath(); ctx.moveTo(x, 14); ctx.lineTo(x, 498); ctx.stroke(); }
+    for (const y of [175, 337]) { ctx.beginPath(); ctx.moveTo(14, y); ctx.lineTo(498, y); ctx.stroke(); }
+  };
+  bars(18, '#c2300a', 30); bars(9, '#ff6a2a', 12); bars(3, '#ffd9a0', 0);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function cellTexture() {                                // the cell's walls from inside: dark, embers at the edges
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const ctx = c.getContext('2d'), g = ctx.createRadialGradient(128, 128, 20, 128, 128, 182);
+  g.addColorStop(0, '#060203'); g.addColorStop(0.7, '#1a0603'); g.addColorStop(1, '#5a1a06');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, 256, 256);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function skinLoad() {
+  SKIN.req = true;
+  const L = new THREE.TextureLoader(), tex = f => { const t = L.load('assets/sk2/' + f); t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const plane = (f, map, extra) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, toneMapped: false, opacity: 0, ...extra }));
+    m.position.copy(NORMALS[f]).multiplyScalar(1.004); m.rotation.set(SKIN_ROT[f][0], SKIN_ROT[f][1], 0, 'YXZ');
+    m.userData.face = f; m.visible = false; cube.add(m); return m;
+  };
+  for (const [f, file] of Object.entries(SKIN_SEAL)) SKIN.seals.push(plane(+f, tex(file)));
+  const gt = grateTexture();
+  for (const f of [2, 3]) SKIN.grates.push(plane(f, gt, { blending: THREE.AdditiveBlending }));
+  SKIN.cell = new THREE.Mesh(new THREE.BoxGeometry(1.97, 1.97, 1.97), new THREE.MeshBasicMaterial({ map: cellTexture(), side: THREE.BackSide }));
+  SKIN.cell.visible = false; cube.add(SKIN.cell);
+  // black ground: additive, he glows cyan in her fire. A Kling loop (author, 2026-10-27: «сделай петлю жнеца»): he looks down,
+  // then up; the copy under the bottom grate runs half a loop later — when one grate sees his face, the other sees his hood
+  const rt = tex('reaper.jpg');
+  SKIN.vids = [0, 0.5].map(off => {
+    const v = Object.assign(document.createElement('video'), { muted: true, playsInline: true, loop: true, preload: 'auto', crossOrigin: 'anonymous' });
+    v.setAttribute('playsinline', ''); v.setAttribute('muted', ''); wholeClip(v, 'assets/sk2/reaper-cell.mp4');
+    const vt = new THREE.VideoTexture(v); vt.colorSpace = THREE.SRGBColorSpace;
+    v.addEventListener('loadedmetadata', () => { v.currentTime = off * v.duration; });
+    v.addEventListener('loadeddata', () => { v.ready = true; });
+    return { v, vt };
+  });
+  for (const n of [1, -1]) {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.55, 1.55), new THREE.MeshBasicMaterial({ map: rt, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, toneMapped: false, opacity: 0, color: new THREE.Color(1.9, 1.9, 1.9) }));   // brighter than the picture
+    m.userData.n = new THREE.Vector3(0, n, 0); m.visible = false; scene.add(m); SKIN.reapers.push(m);
+  }
+}
+const _sk = { n: new THREE.Vector3(), up: new THREE.Vector3(), x: new THREE.Vector3(), M: new THREE.Matrix4() };
+function skinUpdate(dt, t) {
+  const want = WORLD === 'they' ? (1 - DISSOLVE.value) * (1 - (SK.amt || 0)) : 0;
+  SKIN.on += (want - SKIN.on) * Math.min(1, dt * 4); if (Math.abs(want - SKIN.on) < 0.002) SKIN.on = want;
+  if (SKIN.on > 0.001 && !SKIN.req) skinLoad();
+  if (!SKIN.req) return;
+  const on = SKIN.on, flick = 0.85 + 0.15 * Math.sin(t * 7.3) * Math.sin(t * 3.1);
+  for (let f = 0; f < 6; f++) {
+    const p = playingTrack && playingTrack.face === f && !audio.paused ? 1 : 0;
+    SKIN.play[f] += (p - SKIN.play[f]) * Math.min(1, dt * 2.5);
+  }
+  for (const m of SKIN.seals) { m.material.opacity = on * (1 - 0.85 * SKIN.play[m.userData.face]); m.visible = m.material.opacity > 0.003; }
+  for (const m of SKIN.grates) { m.material.opacity = 0.5 * on * flick; m.visible = on > 0.003; }   // dimmer (author, 2026-10-27): the reaper is what you look at
+  // the grates' faces are see-through in they: the cell and the reaper behind, the track's video over them while it plays
+  const open = on > 0.003;
+  for (const f of [2, 3]) {
+    const mat = cube.material[f];
+    if (mat.transparent !== open) { mat.transparent = open; mat.depthWrite = !open; mat.needsUpdate = true; }
+    mat.opacity = open ? 1 - on * (1 - 0.92 * SKIN.play[f]) : 1;
+  }
+  SKIN.cell.visible = open;
+  SKIN.reapers.forEach((m, i) => {                      // flat to his grate, upright on the screen
+    const n = _sk.n.copy(m.userData.n).applyQuaternion(cube.quaternion), up = _sk.up.set(0, 1, 0);
+    up.addScaledVector(n, -up.dot(n));
+    if (up.lengthSq() < 0.05) up.set(0, 0, -1).addScaledVector(n, n.z);
+    up.normalize(); _sk.x.crossVectors(up, n);
+    m.quaternion.setFromRotationMatrix(_sk.M.makeBasis(_sk.x, up, n));
+    m.position.copy(cube.position).addScaledVector(n, -0.15);
+    m.material.opacity = on * (1 - SKIN.play[i ? 3 : 2]) * (0.85 + 0.15 * Math.sin(t * 1.3 + i));
+    m.visible = m.material.opacity > 0.003;
+    const o = SKIN.vids[i], seen = m.visible && n.z > 0.1;   // his grate turned towards us
+    if (o.v.ready && m.material.map !== o.vt) { m.material.map = o.vt; m.material.needsUpdate = true; }
+    if (seen && o.v.paused) o.v.play().catch(() => {}); else if (!seen && !o.v.paused) o.v.pause();
+  });
+}
+
 // ------------------------------------------------------------------ who stands outside the cube
 // he: the reaper, «везде и нигде» («Квант») — seen only in the ghost copies while the cube is uncertain; it settles — no one there.
 // they: succubi in fire chains (sin links: «как тесно греховенства братство»); during «Суккубить» they stand round the cube,
@@ -3807,10 +3952,15 @@ window.addEventListener('keydown', e => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
 });
 // each magnet belongs to its track: it always pulls the cube to that face; on its own face it plays/pauses
-const MAG_TRACK = { left: '00', right: '01', down: '10', up: '11' };   // helmet → Rewind, horseshoe → Вы правы, pill → Теневой опцион, snake & phoenix → Новая фаза
-for (const d of Object.keys(MAG_TRACK)) document.getElementById(d).onclick = () => {
+// he: helmet → Rewind, horseshoe → Вы правы, pill → Теневой опцион, snake & phoenix → Новая фаза;
+// they: fire crown → Rewind, coins → Вы правы, the grate with a cyan crack → Новая фаза, the grate with ∆ behind it → Квант
+const MAG_TRACKS = { he: { left: '00', right: '01', down: '10', up: '11' }, they: { left: '00', right: '01', up: '11', down: '∆' } };
+const MAG_IMG = { he: { left: 'mag-left', right: 'mag-right', up: 'mag-up', down: 'mag-down' },
+                  they: { left: 'they-power', right: 'they-money', up: 'they-new', down: 'they-kvant' } };
+const DELTA_CODE = () => WORLD === 'they' ? '10' : '∆';            // the flying one: ∆ Квант in he, the laurel of glory in they
+for (const d of Object.keys(MAG_TRACKS.he)) document.getElementById(d).onclick = () => {
   unlockMedia();
-  const tr = TRACKS.find(t => t.code === MAG_TRACK[d]);
+  const tr = TRACKS.find(t => t.code === MAG_TRACKS[WORLD][d]);
   magnetFlash(d);
   if (stageTo) { closeStage(); if (current === tr.face) return; }
   if (current === tr.face) toggle(); else goTo(tr.face);
@@ -4140,6 +4290,21 @@ function leaveFullscreen() {
   } catch (e) {}
 }
 const stageBtn = document.getElementById('stagebtn');
+// the clip's window over the player: shown for the open face's track when it has a clip, until the clip is open
+const peekBtn = document.getElementById('peek'), peekVideo = peekBtn.querySelector('video');
+let peekTrack = null;
+function peekFrame() {
+  const tr = trackOnFace(current), want = !stageTo && tr && tr.full && innerWidth > innerHeight ? tr : null;   // sideways only
+  if (want !== peekTrack) {
+    peekTrack = want;
+    if (want) {
+      peekBtn.classList.toggle('sq', !want.wide);
+      peekVideo.src = versioned('assets/prev/' + clipName(want)); peekVideo.play().catch(() => {});
+    } else peekVideo.pause();
+    document.body.classList.toggle('peek', !!want);
+  }
+}
+peekBtn.onclick = () => { unlockMedia(); if (peekTrack) expand(peekTrack); };
 stageBtn.onclick = () => { if (stageTo) closeStage(); else expand(playingTrack); };
 document.getElementById('stage-native').appendChild(stageVideo);    // the same element: texture for the dissolve, plain video when open
 const ambCtx = document.getElementById('stage-amb').getContext('2d');
@@ -4156,6 +4321,7 @@ function stageFrame(dt) {
   revealByFront();
   karaoke();
   document.body.classList.toggle('can-expand', !!(playingTrack && (playingTrack.full || playingTrack.video)));
+  peekFrame();
   const open = stageTo === 1 && stageP >= 1;
   document.body.classList.toggle('native', open);
   stageBtn.textContent = stageTo ? '⤡' : '⤢';
@@ -4189,7 +4355,7 @@ function resize() {
 const MSLOT = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] }, SLOT_OF_FACE = ['left', 'right', 'up', 'down'];   // face 2 is the top one
 const MAG_V = {};
 function placeMagnets() {
-  for (const [id, code] of Object.entries(MAG_TRACK)) MAG_V[id] = MSLOT[SLOT_OF_FACE[TRACKS.find(t => t.code === code).face]];
+  for (const [id, code] of Object.entries(MAG_TRACKS[WORLD])) MAG_V[id] = MSLOT[SLOT_OF_FACE[TRACKS.find(t => t.code === code).face]];
 }
 placeMagnets();
 const magnetAt = dir => Object.keys(MAG_V).find(id => MAG_V[id] === MSLOT[dir]);   // the magnet that sits in that direction
@@ -4247,7 +4413,7 @@ function updateDelta(dt, cubeY = cube.position.y, quiet = false) {
 // ∆ belongs to «Квант» like a magnet: the first tap turns the cube there, the next one plays/pauses
 document.getElementById('delta').addEventListener('click', () => {
   unlockMedia();
-  const f = TRACKS.find(t => t.code === '∆').face;
+  const f = TRACKS.find(t => t.code === DELTA_CODE()).face;
   if (stageTo) { closeStage(); if (current === f) return; }
   if (current === f) toggle(); else goTo(f);
 });
@@ -4391,7 +4557,7 @@ function frame() {
   const fireEdge = skLive ? SK.amt * (1 - sm(151.04, 154.84, at2)) * (inScene ? sm(EDGE_FIRE_AT[0], EDGE_FIRE_AT[1], at2) : 1)
     * (1 - 0.9 * bump(at2, CUT_AT - 0.08, 0.06, 0.12, 0.7)) : 0;   // «…нанесёт сполна внезапно»: a cyan crack runs over her fire
   const fireEdge2 = Math.max(fireEdge, SK.fireCube || 0);                // «Убить?»: the sealed qubit burns again
-  edgeMat.color.copy(EDGE_CYAN).lerp(EDGE_FIRE, fireEdge2);
+  edgeMat.color.copy(EDGE_CYAN).lerp(EDGE_FIRE, Math.max(fireEdge2, SKIN.on));
   const crush = skLive && inScene ? PRESS(at2) * SK.amt : 0;            // «как тесно»: the cage strains outwards and flares
   edges.scale.setScalar(1.004 + crush * (0.012 + 0.006 * Math.sin(t * 37)));
   if (crush > 0) edgeMat.opacity += crush * (0.6 + 0.4 * Math.sin(t * 23));
@@ -4402,6 +4568,7 @@ function frame() {
   skUpdate(SCN(audio.currentTime), SK.amt, t);
   skRewindFx(audio.currentTime, t);
   outsideUpdate(audio.currentTime, t);
+  skinUpdate(dt, t);
   halo.material.uniforms.uT.value = t;
   particles.rotation.y = t * 0.02; particles.rotation.x = Math.sin(t * 0.1) * 0.05;
   for (const a of animated) {
@@ -4475,7 +4642,15 @@ inRange.oninput = () => { INERTIA = inRange.value / 100; store.set('sk-inertia',
 inRange.addEventListener('pointerdown', e => e.stopPropagation());
 function showInertia() { inEl.classList.toggle('on', FREE); }
 const whoEl = document.getElementById('who');
-function showWorld() { whoEl.textContent = WORLD; whoEl.classList.toggle('they', WORLD === 'they'); }
+function showWorld() {
+  whoEl.textContent = WORLD; whoEl.classList.toggle('they', WORLD === 'they');
+  document.body.classList.toggle('they', WORLD === 'they');
+  for (const [d, f] of Object.entries(MAG_IMG[WORLD])) document.getElementById(d).querySelector('img').src = `assets/${f}.png`;
+  deltaEl.innerHTML = WORLD === 'they' ? '<img src="assets/they-glory.png" alt="" draggable="false">' : '∆';
+  deltaEl.ariaLabel = WORLD === 'they' ? 'Теневой опцион' : '∆ Квант';
+  const fire = WORLD === 'they';
+  ghosts.forEach((g, i) => { g.userData.edge.material.color.set(fire ? 0xff5a1f : 0x00e5ff); g.material.forEach(m => m.color.set(fire ? (i ? 0xffa070 : 0xffd2b0) : (i ? 0x66f2ff : 0xbfefff))); });
+}
 // the other world: the tracks move to their faces there, the magnets follow, the codes invert
 function setWorld(w) {
   if (w === WORLD) return;

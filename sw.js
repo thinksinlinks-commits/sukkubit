@@ -2,9 +2,10 @@
 //  - the page and api.json: network first (fresh when online, cached copy offline)
 //  - libraries, fonts, pictures, icons: cache first
 //  - videos (range requests) and the key server are not touched; the encrypted tracks are cached by the page itself
-const SHELL = 'sk-shell-v2';   // v2 (2026-10-26): the cube's pictures changed since v1
+const SHELL = 'sk-shell-v3';   // v3 (2026-10-27): the fire world's buttons; v2: the cube's pictures changed since v1
 const PRECACHE = ['./', 'index.html', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
-  'assets/mag-left.png', 'assets/mag-right.png', 'assets/mag-up.png', 'assets/mag-down.png'];
+  'assets/mag-left.png', 'assets/mag-right.png', 'assets/mag-up.png', 'assets/mag-down.png',
+  'assets/they-power.png', 'assets/they-money.png', 'assets/they-glory.png', 'assets/they-new.png', 'assets/they-kvant.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(SHELL).then(c => c.addAll(PRECACHE)).then(() => self.skipWaiting()));
